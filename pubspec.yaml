@@ -1,0 +1,47 @@
+name: experts_app
+description: تطبيق Flutter للمزارعين والخبراء متصل بواجهة خلفية FastAPI
+publish_to: 'none' # هذا يعني أنه مشروع محلي وليس حزمة للنشر
+version: 1.0.0+1
+
+environment:
+  sdk: ">=3.0.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # مكتبة http للاتصال بالـ backend (FastAPI)
+  http: ^1.2.0
+
+  # مكتبة اختيار الصور من المعرض أو الكاميرا
+  image_picker: ^1.1.1
+
+  # لتحميل الصور وتحويلها إلى Base64 أو العكس
+  flutter_image_compress: ^2.3.0
+
+  # لإدارة الحالة والتنقل
+  provider: ^6.1.2
+
+  # لتصميمات جاهزة وواجهة مستخدم أجمل
+  google_fonts: ^6.1.0
+
+  # مكتبة لمسارات الملفات (مفيدة في الويب والموبايل)
+  path_provider: ^2.1.2
+
+ 
+
+  # أدوات واجهة المستخدم المادية
+  cupertino_icons: ^1.0.8
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+
+  flutter_lints: ^4.0.0
+
+flutter:
+  uses-material-design: true
+
+  # إذا أضفت صورًا إلى المشروع ضعها هنا
+  assets:
+    - assets/images/
