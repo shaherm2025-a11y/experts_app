@@ -3,9 +3,7 @@ import 'package:http/http.dart' as http;
 import '../models/expert.dart';
 
 class ApiService {
-  // عدّل هذا العنوان حسب سيرفرك المحلي
-  //static const String baseUrl = "http://localhost:8000"; // للمحاكي Android
-  // استخدم "http://127.0.0.1:7860" لو تشغله على الويب
+  
   static const String baseUrl = "https://mohashaher-plant-diag-final-server.hf.space";
 
   // تسجيل دخول الخبير
