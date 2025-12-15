@@ -24,7 +24,7 @@ class _ExpertHomeScreenState extends State<ExpertHomeScreen> {
     super.initState();
     _loadQuestions();
     // تحديث تلقائي كل 10 ثوانٍ
-    Timer.periodic(const Duration(seconds: 10), (timer) {
+    Timer.periodic(const Duration(seconds: 60), (timer) {
       if (mounted) _loadQuestions();
     });
   }
