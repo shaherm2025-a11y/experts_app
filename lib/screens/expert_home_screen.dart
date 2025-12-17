@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert'; // مهم لتحويل base64
 import 'package:flutter/material.dart';
 import '../services/api_service.dart';
 import 'edit_profile_screen.dart';
@@ -23,8 +22,8 @@ class _ExpertHomeScreenState extends State<ExpertHomeScreen> {
   void initState() {
     super.initState();
     _loadQuestions();
-    // تحديث تلقائي كل 10 ثوانٍ
-    Timer.periodic(const Duration(seconds: 60), (timer) {
+    // تحديث تلقائي
+    Timer.periodic(const Duration(seconds:300), (timer) {
       if (mounted) _loadQuestions();
     });
   }
@@ -86,23 +85,27 @@ class _ExpertHomeScreenState extends State<ExpertHomeScreen> {
     );
   }
 
-  void _showFullImage(String base64Image) {
-    showDialog(
-      context: context,
-      builder: (_) => Dialog(
-        backgroundColor: Colors.transparent,
-        child: InteractiveViewer(
-          panEnabled: true,
-          minScale: 0.5,
-          maxScale: 5.0,
-          child: Image.memory(
-            base64Decode(base64Image),
-            fit: BoxFit.contain,
-          ),
+ void _showFullImage(int questionId) {
+  showDialog(
+    context: context,
+    builder: (_) => Dialog(
+      backgroundColor: Colors.transparent,
+      child: InteractiveViewer(
+        panEnabled: true,
+        minScale: 0.5,
+        maxScale: 5.0,
+        child: Image.network(
+          "${ApiService.baseUrl}/expert_question_image/$questionId",
+          fit: BoxFit.contain,
+          loadingBuilder: (context, child, progress) {
+            if (progress == null) return child;
+            return const Center(child: CircularProgressIndicator());
+          },
         ),
       ),
-    );
-  }
+    ),
+  );
+}
 
   Widget _buildQuestionCard(Map<String, dynamic> q, {bool answeredCard = false}) {
     return Card(
@@ -140,22 +143,23 @@ class _ExpertHomeScreenState extends State<ExpertHomeScreen> {
                 ),
               )
             : null,
-        leading: q['image'] != null
-            ? GestureDetector(
-                onTap: () => _showFullImage(q['image']),
-                child: Container(
-                  width: 100,
-                  height: 100,
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(12),
-                    image: DecorationImage(
-                      image: MemoryImage(base64Decode(q['image'])),
-                      fit: BoxFit.cover,
-                    ),
-                  ),
-                ),
-              )
-            : const Icon(Icons.image_not_supported, size: 60, color: Colors.grey),
+        leading: GestureDetector(
+         onTap: () => _showFullImage(q['id']),
+         child: Container(
+          width: 100,
+          height: 100,
+          decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(12),
+          image: DecorationImage(
+           image: NetworkImage(
+            "${ApiService.baseUrl}/expert_question_image/${q['id']}",
+           ),
+           fit: BoxFit.cover,
+           ),
+          ),
+         ),
+        ),
+
         trailing: !answeredCard
             ? IconButton(
                 icon: const Icon(Icons.reply, color: Colors.green, size: 28),
