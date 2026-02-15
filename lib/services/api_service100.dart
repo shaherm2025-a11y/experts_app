@@ -55,50 +55,33 @@ class ApiService {
   // 🔹 واجهة الخبير (الأسئلة والإجابات)
   // ===============================
 
-  // ===============================
-// 🔹 واجهة الخبير (الأسئلة والإجابات)
-// ===============================
-
-// جلب الأسئلة للخبير
-static Future<Map<String, dynamic>> getExpertDiagnoses(int expertId) async {
-  final response =
-      await http.get(Uri.parse('$baseUrl/expert_diagnoses/$expertId'));
-
-  if (response.statusCode == 200) {
-    return json.decode(response.body);
-  } else {
-    throw Exception("فشل في تحميل الأسئلة");
+  // جلب الأسئلة للخبير (مجاوبة وغير مجاوبة)
+  static Future<Map<String, dynamic>> getExpertDiagnoses(int expertId) async {
+    final response = await http.get(Uri.parse('$baseUrl/expert_diagnoses/$expertId'));
+    if (response.statusCode == 200) {
+      return json.decode(response.body);
+    } else {
+      throw Exception("فشل في تحميل الأسئلة");
+    }
   }
-}
 
-
-// إرسال إجابة من الخبير (مع صوت اختياري)
-static Future<bool> answerQuestion({
-  required int questionId,
-  required int expertId,
-  required String answer,
-  File? audioFile,
-}) async {
-  final uri = Uri.parse('$baseUrl/answer_question/$questionId');
-
-  final request = http.MultipartRequest("PUT", uri);
-
-  request.fields['expert_id'] = expertId.toString();
-  request.fields['answer'] = answer;
-
-  if (audioFile != null && await audioFile.exists()) {
-    request.files.add(
-      await http.MultipartFile.fromPath(
-        "answer_audio",
-        audioFile.path,
-      ),
+  // إرسال إجابة من الخبير
+  static Future<bool> answerQuestion({
+    required int questionId,
+    required int expertId,
+    required String answer,
+  }) async {
+    final response = await http.put(
+      Uri.parse('$baseUrl/answer_question/$questionId'),
+      headers: {'Content-Type': 'application/json'},
+      body: json.encode({
+        'expert_id': expertId,
+        'answer': answer,
+      }),
     );
+    return response.statusCode == 200;
   }
 
-  final response = await request.send();
-
-  return response.statusCode == 200;
-}
 
 // تعديل بيانات خبير (للخبير أو للمدير)
   static Future<bool> updateExpert({

@@ -2,9 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import '../services/api_service.dart';
 import 'edit_profile_screen.dart';
-import 'dart:io';
-import 'package:path_provider/path_provider.dart';
-import 'local_db.dart';
+
 
 class ExpertHomeScreen extends StatefulWidget {
   final int expertId;
@@ -31,96 +29,19 @@ class _ExpertHomeScreenState extends State<ExpertHomeScreen> {
   }
 
   Future<void> _loadQuestions() async {
-  setState(() => loading = true);
-
-  try {
-    final data = await ApiService.getExpertDiagnoses(widget.expertId);
-
-    unanswered = List<Map<String, dynamic>>.from(data['unanswered']);
-    answered = List<Map<String, dynamic>>.from(data['answered']);
-
-    final dir = await getApplicationDocumentsDirectory();
-
-    // ===============================
-    // 🔹 حفظ جميع الأسئلة محليًا
-    // ===============================
-
-    for (var q in [...unanswered, ...answered]) {
-      final questionId = q['id'];
-
-      // ===== حفظ الصورة =====
-      final imageUrl =
-          "${ApiService.baseUrl}/expert_question_image/$questionId";
-
-      final imagePath = "${dir.path}/question_$questionId.png";
-
-      if (!File(imagePath).existsSync()) {
-        final response = await http.get(Uri.parse(imageUrl));
-        if (response.statusCode == 200) {
-          await File(imagePath).writeAsBytes(response.bodyBytes);
-        }
-      }
-
-      // ===== حفظ صوت السؤال (إن وجد) =====
-      String? questionAudioPath;
-
-      final audioUrl =
-          "${ApiService.baseUrl}/expert_question_audio/$questionId";
-
-      final audioFile =
-          File("${dir.path}/question_${questionId}_audio.m4a");
-
-      if (!audioFile.existsSync()) {
-        final audioResponse = await http.get(Uri.parse(audioUrl));
-
-        if (audioResponse.statusCode == 200 &&
-            audioResponse.bodyBytes.isNotEmpty) {
-          await audioFile.writeAsBytes(audioResponse.bodyBytes);
-          questionAudioPath = audioFile.path;
-        }
-      } else {
-        questionAudioPath = audioFile.path;
-      }
-
-      // ===== حفظ نص الرد وصوت الرد =====
-      String? answerAudioPath;
-
-      final answerAudioUrl =
-          "${ApiService.baseUrl}/expert_answer_audio/$questionId";
-
-      final answerAudioFile =
-          File("${dir.path}/answer_${questionId}.m4a");
-
-      if (!answerAudioFile.existsSync()) {
-        final audioResponse =
-            await http.get(Uri.parse(answerAudioUrl));
-
-        if (audioResponse.statusCode == 200 &&
-            audioResponse.bodyBytes.isNotEmpty) {
-          await answerAudioFile.writeAsBytes(audioResponse.bodyBytes);
-          answerAudioPath = answerAudioFile.path;
-        }
-      } else {
-        answerAudioPath = answerAudioFile.path;
-      }
-
-      // ===== حفظ في SQLite =====
-      await LocalDB.insertQuestion({
-        "id": questionId,
-        "question": q['question'],
-        "answer": q['answer'],
-        "image_path": imagePath,
-        "question_audio_path": questionAudioPath,
-        "answer_audio_path": answerAudioPath,
-        "status": q['status'] ?? 0
+    setState(() => loading = true);
+    try {
+      final data = await ApiService.getExpertDiagnoses(widget.expertId);
+      setState(() {
+        unanswered = List<Map<String, dynamic>>.from(data['unanswered']);
+        answered = List<Map<String, dynamic>>.from(data['answered']);
+        loading = false;
       });
+    } catch (e) {
+      setState(() => loading = false);
     }
-
-    setState(() => loading = false);
-  } catch (e) {
-    setState(() => loading = false);
   }
-}
+
   void _showAnswerDialog(Map<String, dynamic> question) {
     final controller = TextEditingController();
 
@@ -144,31 +65,19 @@ class _ExpertHomeScreenState extends State<ExpertHomeScreen> {
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
             onPressed: () async {
-  final success = await ApiService.answerQuestion(
-    questionId: question['id'],
-    expertId: widget.expertId,
-    answer: controller.text.trim(),
-  );
-
-  if (success && mounted) {
-    final dir = await getApplicationDocumentsDirectory();
-
-    // ===== تحديث قاعدة البيانات المحلية =====
-    await LocalDB.updateAnswer(
-      question['id'],
-      controller.text.trim(),
-      null, // ضع مسار صوت الرد إذا سجلت صوت
-    );
-
-    Navigator.pop(context);
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('✅ تم ارسال الرد بنجاح')),
-    );
-
-    _loadQuestions();
-  }
-},
+              final success = await ApiService.answerQuestion(
+                questionId: question['id'],
+                expertId: widget.expertId,
+                answer: controller.text.trim(),
+              );
+              if (success && mounted) {
+                Navigator.pop(context);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('✅ تم ارسال الرد بنجاح')),
+                );
+                _loadQuestions();
+              }
+            },
             child: const Text('إرسال'),
           ),
         ],
