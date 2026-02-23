@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../models/expert.dart';
+import 'dart:io';
 
 class ApiService {
    static const String baseUrl = "https://mohashaher-backend-supaspace.hf.space";
@@ -55,48 +56,42 @@ class ApiService {
   // 🔹 واجهة الخبير (الأسئلة والإجابات)
   // ===============================
 
-  // ===============================
-// 🔹 واجهة الخبير (الأسئلة والإجابات)
-// ===============================
-
-// جلب الأسئلة للخبير
-static Future<Map<String, dynamic>> getExpertDiagnoses(int expertId) async {
-  final response =
-      await http.get(Uri.parse('$baseUrl/expert_diagnoses/$expertId'));
-
-  if (response.statusCode == 200) {
-    return json.decode(response.body);
-  } else {
-    throw Exception("فشل في تحميل الأسئلة");
+  // جلب الأسئلة للخبير (مجاوبة وغير مجاوبة)
+  static Future<Map<String, dynamic>> getExpertDiagnoses(int expertId) async {
+    final response = await http.get(Uri.parse('$baseUrl/expert_diagnoses/$expertId'));
+    if (response.statusCode == 200) {
+      return json.decode(response.body);
+    } else {
+      throw Exception("فشل في تحميل الأسئلة");
+    }
   }
-}
 
-
-// إرسال إجابة من الخبير (مع صوت اختياري)
-static Future<bool> answerQuestion({
+  // إرسال إجابة من الخبير
+    static Future<bool> answerQuestion({
   required int questionId,
   required int expertId,
   required String answer,
   File? audioFile,
 }) async {
-  final uri = Uri.parse('$baseUrl/answer_question/$questionId');
 
-  final request = http.MultipartRequest("PUT", uri);
+  var request = http.MultipartRequest(
+    'PUT',
+    Uri.parse('$baseUrl/answer_question/$questionId'),
+  );
 
   request.fields['expert_id'] = expertId.toString();
   request.fields['answer'] = answer;
 
-  if (audioFile != null && await audioFile.exists()) {
+  if (audioFile != null) {
     request.files.add(
       await http.MultipartFile.fromPath(
-        "answer_audio",
+        'answer_audio',
         audioFile.path,
       ),
     );
   }
 
-  final response = await request.send();
-
+  var response = await request.send();
   return response.statusCode == 200;
 }
 

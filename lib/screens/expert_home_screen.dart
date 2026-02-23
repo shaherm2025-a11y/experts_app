@@ -2,9 +2,13 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import '../services/api_service.dart';
 import 'edit_profile_screen.dart';
+import 'package:audioplayers/audioplayers.dart';
+import 'package:record/record.dart';
 import 'dart:io';
 import 'package:path_provider/path_provider.dart';
+import 'package:http/http.dart' as http;
 import 'local_db.dart';
+
 
 class ExpertHomeScreen extends StatefulWidget {
   final int expertId;
@@ -19,6 +23,8 @@ class _ExpertHomeScreenState extends State<ExpertHomeScreen> {
   List<Map<String, dynamic>> unanswered = [];
   List<Map<String, dynamic>> answered = [];
   bool loading = true;
+  
+  final AudioPlayer player = AudioPlayer();
 
   @override
   void initState() {
@@ -29,6 +35,23 @@ class _ExpertHomeScreenState extends State<ExpertHomeScreen> {
       if (mounted) _loadQuestions();
     });
   }
+  
+  @override
+  void dispose() {
+    player.dispose();   // 👈 هنا
+    super.dispose();
+  }
+  
+  Future<String> _downloadAndSaveFile(String url, String fileName) async {
+  final response = await http.get(Uri.parse(url));
+
+  final dir = await getApplicationDocumentsDirectory();
+  final file = File('${dir.path}/$fileName');
+
+  await file.writeAsBytes(response.bodyBytes);
+
+  return file.path;
+}
 
   Future<void> _loadQuestions() async {
   setState(() => loading = true);
@@ -39,144 +62,143 @@ class _ExpertHomeScreenState extends State<ExpertHomeScreen> {
     unanswered = List<Map<String, dynamic>>.from(data['unanswered']);
     answered = List<Map<String, dynamic>>.from(data['answered']);
 
-    final dir = await getApplicationDocumentsDirectory();
-
-    // ===============================
-    // 🔹 حفظ جميع الأسئلة محليًا
-    // ===============================
-
+    // 🔥 حفظ الأسئلة محلياً
     for (var q in [...unanswered, ...answered]) {
-      final questionId = q['id'];
 
-      // ===== حفظ الصورة =====
-      final imageUrl =
-          "${ApiService.baseUrl}/expert_question_image/$questionId";
-
-      final imagePath = "${dir.path}/question_$questionId.png";
-
-      if (!File(imagePath).existsSync()) {
-        final response = await http.get(Uri.parse(imageUrl));
-        if (response.statusCode == 200) {
-          await File(imagePath).writeAsBytes(response.bodyBytes);
-        }
-      }
-
-      // ===== حفظ صوت السؤال (إن وجد) =====
-      String? questionAudioPath;
-
-      final audioUrl =
-          "${ApiService.baseUrl}/expert_question_audio/$questionId";
-
-      final audioFile =
-          File("${dir.path}/question_${questionId}_audio.m4a");
-
-      if (!audioFile.existsSync()) {
-        final audioResponse = await http.get(Uri.parse(audioUrl));
-
-        if (audioResponse.statusCode == 200 &&
-            audioResponse.bodyBytes.isNotEmpty) {
-          await audioFile.writeAsBytes(audioResponse.bodyBytes);
-          questionAudioPath = audioFile.path;
-        }
-      } else {
-        questionAudioPath = audioFile.path;
-      }
-
-      // ===== حفظ نص الرد وصوت الرد =====
-      String? answerAudioPath;
-
-      final answerAudioUrl =
-          "${ApiService.baseUrl}/expert_answer_audio/$questionId";
-
-      final answerAudioFile =
-          File("${dir.path}/answer_${questionId}.m4a");
-
-      if (!answerAudioFile.existsSync()) {
-        final audioResponse =
-            await http.get(Uri.parse(answerAudioUrl));
-
-        if (audioResponse.statusCode == 200 &&
-            audioResponse.bodyBytes.isNotEmpty) {
-          await answerAudioFile.writeAsBytes(audioResponse.bodyBytes);
-          answerAudioPath = answerAudioFile.path;
-        }
-      } else {
-        answerAudioPath = answerAudioFile.path;
-      }
-
-      // ===== حفظ في SQLite =====
       await LocalDB.insertQuestion({
-        "id": questionId,
-        "question": q['question'],
-        "answer": q['answer'],
-        "image_path": imagePath,
-        "question_audio_path": questionAudioPath,
-        "answer_audio_path": answerAudioPath,
-        "status": q['status'] ?? 0
+        "id": q["id"],
+        "question": q["question"],
+        "answer": q["answer"],
+        "status": q["status"],
+        "question_date": q["question_date"],
       });
+
+      // تحميل الصورة
+      final imagePath = await _downloadAndSaveFile(
+        "${ApiService.baseUrl}/expert_question_image/${q['id']}",
+        "q_${q['id']}.jpg",
+      );
+
+      await LocalDB.updateQuestionImagePath(q['id'], imagePath);
+
+      // تحميل صوت السؤال
+      try {
+        final audioPath = await _downloadAndSaveFile(
+          "${ApiService.baseUrl}/expert_question_audio/${q['id']}",
+          "q_${q['id']}.mp3",
+        );
+
+        await LocalDB.updateQuestionAudioPath(q['id'], audioPath);
+      } catch (_) {}
+
+      // تحميل صوت الرد إذا موجود
+      if (q["status"] == 1) {
+        try {
+          final answerAudioPath = await _downloadAndSaveFile(
+            "${ApiService.baseUrl}/expert_answer_audio/${q['id']}",
+            "a_${q['id']}.mp3",
+          );
+
+          await LocalDB.updateAnswer(
+              q['id'], q['answer'] ?? "", answerAudioPath);
+        } catch (_) {}
+      }
     }
 
     setState(() => loading = false);
+
   } catch (e) {
-    setState(() => loading = false);
+
+    // 🔥 في حالة عدم وجود إنترنت → جلب من SQLite
+    final localUnanswered = await LocalDB.getUnanswered();
+    final localAnswered = await LocalDB.getAnswered();
+
+    setState(() {
+      unanswered = localUnanswered;
+      answered = localAnswered;
+      loading = false;
+    });
   }
 }
+
   void _showAnswerDialog(Map<String, dynamic> question) {
-    final controller = TextEditingController();
+  final controller = TextEditingController();
+  final recorder = AudioRecorder();
+  File? recordedFile;
+  bool isRecording = false;
 
-    showDialog(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: Text('الرد على الاستفسار المحدد'),
-        content: TextField(
-          controller: controller,
-          maxLines: 4,
-          decoration: const InputDecoration(
-            hintText: 'اكتب ردك هنا...',
-            border: OutlineInputBorder(),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('إلغاء'),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
-            onPressed: () async {
-  final success = await ApiService.answerQuestion(
-    questionId: question['id'],
-    expertId: widget.expertId,
-    answer: controller.text.trim(),
+  showDialog(
+    context: context,
+    builder: (context) {
+      return StatefulBuilder(
+        builder: (context, setStateDialog) {
+          return AlertDialog(
+            title: const Text('الرد على الاستفسار'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+
+                TextField(
+                  controller: controller,
+                  maxLines: 4,
+                  decoration: const InputDecoration(
+                    hintText: 'اكتب ردك هنا...',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+
+                const SizedBox(height: 10),
+
+                ElevatedButton.icon(
+                  icon: Icon(isRecording ? Icons.stop : Icons.mic),
+                  label: Text(isRecording ? "إيقاف التسجيل" : "تسجيل صوت"),
+                  onPressed: () async {
+                    if (!isRecording) {
+                      await recorder.start(
+                        const RecordConfig(),
+                        path: 'expert_reply_${question['id']}.m4a',
+                      );
+                      setStateDialog(() => isRecording = true);
+                    } else {
+                      final path = await recorder.stop();
+                      recordedFile = File(path!);
+                      setStateDialog(() => isRecording = false);
+                    }
+                  },
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('إلغاء'),
+              ),
+              ElevatedButton(
+                onPressed: () async {
+
+                  final success = await ApiService.answerQuestion(
+                    questionId: question['id'],
+                    expertId: widget.expertId,
+                    answer: controller.text.trim(),
+                    audioFile: recordedFile,
+                  );
+
+                  if (success && mounted) {
+                    Navigator.pop(context);
+                    _loadQuestions();
+                  }
+                },
+                child: const Text('إرسال'),
+              ),
+            ],
+          );
+        },
+      );
+    },
   );
+}
 
-  if (success && mounted) {
-    final dir = await getApplicationDocumentsDirectory();
-
-    // ===== تحديث قاعدة البيانات المحلية =====
-    await LocalDB.updateAnswer(
-      question['id'],
-      controller.text.trim(),
-      null, // ضع مسار صوت الرد إذا سجلت صوت
-    );
-
-    Navigator.pop(context);
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('✅ تم ارسال الرد بنجاح')),
-    );
-
-    _loadQuestions();
-  }
-},
-            child: const Text('إرسال'),
-          ),
-        ],
-      ),
-    );
-  }
-
- void _showFullImage(int questionId) {
+ void _showFullImage(String? imagePath) {
   showDialog(
     context: context,
     builder: (_) => Dialog(
@@ -185,82 +207,103 @@ class _ExpertHomeScreenState extends State<ExpertHomeScreen> {
         panEnabled: true,
         minScale: 0.5,
         maxScale: 5.0,
-        child: Image.network(
-          "${ApiService.baseUrl}/expert_question_image/$questionId",
-          fit: BoxFit.contain,
-          loadingBuilder: (context, child, progress) {
-            if (progress == null) return child;
-            return const Center(child: CircularProgressIndicator());
-          },
-        ),
+        child: imagePath != null && File(imagePath).existsSync()
+            ? Image.file(
+                File(imagePath),
+                fit: BoxFit.contain,
+              )
+            : const Center(
+                child: Icon(Icons.image_not_supported, size: 80, color: Colors.white),
+              ),
       ),
     ),
   );
 }
 
-  Widget _buildQuestionCard(Map<String, dynamic> q, {bool answeredCard = false}) {
-    return Card(
-      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      elevation: 4,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: ListTile(
-        contentPadding: const EdgeInsets.all(12),
-        title: Text(
-          q['question'],
-          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-        ),
-        subtitle: answeredCard
-            ? Padding(
-                padding: const EdgeInsets.only(top: 8.0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Divider(),
-                    Text(
-                      'الإجابة (${q['expert_name'] ?? 'مجهول'}): ${q['answer'] ?? "لا توجد"}',
-                      style: const TextStyle(fontSize: 14, color: Colors.black87),
-                    ),
-					const SizedBox(height: 4),
-                    Text(
-                      '📅 تاريخ الرد: ${q['diagnosis_date'] ?? "غير متاح"}',
-                      style: const TextStyle(fontSize: 13, color: Colors.grey),
-                       ),
-					const SizedBox(height: 4),
-                    Text(
-                      '📅 تاريخ الاستفسار: ${q['question_date'] ?? "غير متاح"}',
-                      style: const TextStyle(fontSize: 13, color: Colors.grey),
-                       ),   
-                  ],
-                ),
-              )
-            : null,
-        leading: GestureDetector(
-         onTap: () => _showFullImage(q['id']),
-         child: Container(
-          width: 100,
-          height: 100,
-          decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(12),
-          image: DecorationImage(
-           image: NetworkImage(
-            "${ApiService.baseUrl}/expert_question_image/${q['id']}",
-           ),
-           fit: BoxFit.cover,
-           ),
-          ),
-         ),
-        ),
+  Widget _buildQuestionCard(Map<String, dynamic> q,
+    {bool answeredCard = false}) {
+  return Card(
+    margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+    elevation: 4,
+    shape: RoundedRectangleBorder(
+      borderRadius: BorderRadius.circular(12),
+    ),
+    child: ListTile(
+      contentPadding: const EdgeInsets.all(12),
 
-        trailing: !answeredCard
-            ? IconButton(
-                icon: const Icon(Icons.reply, color: Colors.green, size: 28),
-                onPressed: () => _showAnswerDialog(q),
-              )
-            : null,
+      // عنوان السؤال
+      title: Text(
+        q['question'] ?? "",
+        style: const TextStyle(
+          fontWeight: FontWeight.bold,
+          fontSize: 16,
+        ),
       ),
-    );
-  }
 
+      // محتوى تحت السؤال
+      subtitle: answeredCard
+          ? Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const SizedBox(height: 8),
+                const Divider(),
+
+                Text(
+                  "الإجابة (${q['expert_name'] ?? 'مجهول'}): "
+                  "${q['answer'] ?? 'لا توجد'}",
+                ),
+
+                const SizedBox(height: 4),
+
+                Text(
+                  "📅 تاريخ الرد: "
+                  "${q['diagnosis_date'] ?? 'غير متاح'}",
+                  style: const TextStyle(color: Colors.grey),
+                ),
+
+                const SizedBox(height: 4),
+
+                Text(
+                  "📅 تاريخ الاستفسار: "
+                  "${q['question_date'] ?? 'غير متاح'}",
+                  style: const TextStyle(color: Colors.grey),
+                ),
+              ],
+            )
+          : null,
+
+      // صورة السؤال
+      leading: GestureDetector(
+        onTap: () => _showFullImage(q['image_path']),
+        child: Container(
+          width: 90,
+          height: 90,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            image: q['image_path'] != null &&
+                    File(q['image_path']).existsSync()
+                ? DecorationImage(
+                    image: FileImage(File(q['image_path'])),
+                    fit: BoxFit.cover,
+                  )
+                : const DecorationImage(
+                    image: AssetImage("assets/placeholder.png"),
+                    fit: BoxFit.cover,
+                  ),
+          ),
+        ),
+      ),
+
+      // زر الرد
+      trailing: !answeredCard
+          ? IconButton(
+              icon: const Icon(Icons.reply, color: Colors.green),
+              onPressed: () => _showAnswerDialog(q),
+            )
+          : null,
+    ),
+  );
+}
   @override
   Widget build(BuildContext context) {
     if (loading) {

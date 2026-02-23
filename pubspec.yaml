@@ -29,6 +29,9 @@ dependencies:
   path_provider: ^2.1.2
   sqflite: ^2.3.0
   path: ^1.9.0
+  audioplayers: ^5.2.1
+  record: ^5.0.0
+
 
  
 
@@ -47,3 +50,4 @@ flutter:
   # إذا أضفت صورًا إلى المشروع ضعها هنا
   assets:
     - assets/images/
+    - assets/placeholder.png
