@@ -219,69 +219,62 @@ class _ExpertHomeScreenState extends State<ExpertHomeScreen> {
     ),
   );
 }
-
-  Widget _buildQuestionCard(Map<String, dynamic> q,
-    {bool answeredCard = false}) {
+  Widget _buildQuestionCard(Map<String, dynamic> q, {bool answeredCard = false}) {
   return Card(
     margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
     elevation: 4,
-    shape: RoundedRectangleBorder(
-      borderRadius: BorderRadius.circular(12),
-    ),
+    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
     child: ListTile(
       contentPadding: const EdgeInsets.all(12),
-
-      // عنوان السؤال
       title: Text(
-        q['question'] ?? "",
-        style: const TextStyle(
-          fontWeight: FontWeight.bold,
-          fontSize: 16,
-        ),
+        q['question'],
+        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
       ),
-
-      // محتوى تحت السؤال
       subtitle: answeredCard
-          ? Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const SizedBox(height: 8),
-                const Divider(),
-
-                Text(
-                  "الإجابة (${q['expert_name'] ?? 'مجهول'}): "
-                  "${q['answer'] ?? 'لا توجد'}",
-                ),
-
-                const SizedBox(height: 4),
-
-                Text(
-                  "📅 تاريخ الرد: "
-                  "${q['diagnosis_date'] ?? 'غير متاح'}",
-                  style: const TextStyle(color: Colors.grey),
-                ),
-
-                const SizedBox(height: 4),
-
-                Text(
-                  "📅 تاريخ الاستفسار: "
-                  "${q['question_date'] ?? 'غير متاح'}",
-                  style: const TextStyle(color: Colors.grey),
-                ),
-              ],
+          ? Padding(
+              padding: const EdgeInsets.only(top: 8.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  IconButton(
+                    icon: const Icon(Icons.volume_up),
+                    onPressed: () {
+                      player.play(DeviceFileSource(q['question_audio_path']));
+                    },
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.play_arrow),
+                    onPressed: () {
+                      player.play(DeviceFileSource(q['answer_audio_path']));
+                    },
+                  ),
+                  const Divider(),
+                  Text(
+                    'الإجابة (${q['expert_name'] ?? 'مجهول'}): ${q['answer'] ?? "لا توجد"}',
+                    style: const TextStyle(fontSize: 14, color: Colors.black87),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    '📅 تاريخ الرد: ${q['diagnosis_date'] ?? "غير متاح"}',
+                    style: const TextStyle(fontSize: 13, color: Colors.grey),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    '📅 تاريخ الاستفسار: ${q['question_date'] ?? "غير متاح"}',
+                    style: const TextStyle(fontSize: 13, color: Colors.grey),
+                  ),
+                ],
+              ),
             )
           : null,
-
-      // صورة السؤال
       leading: GestureDetector(
         onTap: () => _showFullImage(q['image_path']),
         child: Container(
-          width: 90,
-          height: 90,
+          width: 100,
+          height: 100,
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(12),
-            image: q['image_path'] != null &&
-                    File(q['image_path']).existsSync()
+            image: q['image_path'] != null && File(q['image_path']).existsSync()
                 ? DecorationImage(
                     image: FileImage(File(q['image_path'])),
                     fit: BoxFit.cover,
@@ -293,11 +286,9 @@ class _ExpertHomeScreenState extends State<ExpertHomeScreen> {
           ),
         ),
       ),
-
-      // زر الرد
       trailing: !answeredCard
           ? IconButton(
-              icon: const Icon(Icons.reply, color: Colors.green),
+              icon: const Icon(Icons.reply, color: Colors.green, size: 28),
               onPressed: () => _showAnswerDialog(q),
             )
           : null,
