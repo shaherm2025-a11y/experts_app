@@ -32,52 +32,52 @@ class LocalDB {
   // 🔹 إنشاء جدول الأسئلة
   // ===============================
   static Future<void> _createDB(Database db, int version) async {
-    await db.execute('''
-      CREATE TABLE questions (
-        id INTEGER PRIMARY KEY,
-        question TEXT,
-        answer TEXT,
-        image_path TEXT,
-        question_audio_path TEXT,
-        answer_audio_path TEXT,
-        status INTEGER,
-        question_date TEXT,
-        created_at TEXT
-      )
-    ''');
-  }
+  await db.execute('''
+    CREATE TABLE questions (
+      id INTEGER PRIMARY KEY,
+      question TEXT,
+      answer TEXT,
+      expert_name TEXT,
+      image_path TEXT,
+      question_audio_path TEXT,
+      answer_audio_path TEXT,
+      status INTEGER,
+      question_date TEXT,
+      diagnosis_date TEXT,
+      created_at TEXT,
+	    is_synced INTEGER DEFAULT 1
+    )
+  ''');
+}
 
-  // ===============================
-  // 🔹 إضافة سؤال جديد
-  // ===============================
-  static Future<int> insertQuestion(Map<String, dynamic> data) async {
-    final db = await database;
+static Future<void> insertOrUpdateQuestion(Map<String, dynamic> data) async {
+  final db = await database;
 
-    return await db.insert(
-      "questions",
-      {
-        "id": data["id"],
-        "question": data["question"],
-        "answer": data["answer"],
-        "image_path": data["image_path"],
-        "question_audio_path": data["question_audio_path"],
-        "answer_audio_path": data["answer_audio_path"],
-        "status": data["status"] ?? 0,
-
-        // ⭐ تاريخ السؤال
-        "question_date":
-            data["question_date"] ?? DateTime.now().toIso8601String(),
-
-        "created_at": DateTime.now().toIso8601String(),
-      },
-      conflictAlgorithm: ConflictAlgorithm.replace,
-    );
-  }
-
+  await db.insert(
+    "questions",
+    {
+      "id": data["id"],
+      "question": data["question"],
+      "answer": data["answer"],
+      "expert_name": data["expert_name"],
+      "image_path": data["image_path"],
+      "question_audio_path": data["question_audio_path"],
+      "answer_audio_path": data["answer_audio_path"],
+      "status": data["status"] ?? 0,
+      "question_date": data["question_date"],
+      "diagnosis_date": data["diagnosis_date"],
+      "created_at": DateTime.now().toIso8601String(),
+    },
+    conflictAlgorithm: ConflictAlgorithm.replace,
+  );
+}
+  
+ 
+  
   // ===============================
   // 🔹 تحديث الرد (نص + صوت)
   // ===============================
-  static Future<void> updateAnswer(
+  static Future<void> updateAnswer1(
       int id, String answer, String? audioPath) async {
     final db = await database;
 
@@ -93,6 +93,39 @@ class LocalDB {
     );
   }
 
+ // ������� 
+  static Future<void> updateAnswer(
+  int id,
+  String answer,
+  String? audioPath,
+  {int isSynced = 0}
+) async {
+  final db = await database;
+
+  await db.update(
+    "questions",
+    {
+      "answer": answer,
+      "answer_audio_path": audioPath,
+      "status": 1,
+      "is_synced": isSynced,
+      "diagnosis_date": DateTime.now().toIso8601String(),
+    },
+    where: "id = ?",
+    whereArgs: [id],
+  );
+}
+  
+  
+  static Future<List<Map<String, dynamic>>> getUnsyncedAnswers() async {
+  final db = await database;
+
+  return await db.query(
+    "questions",
+    where: "status = ? AND is_synced = ?",
+    whereArgs: [1, 0],
+  );
+}
   // ===============================
   // 🔹 تحديث مسار صوت السؤال
   // ===============================
@@ -126,43 +159,55 @@ class LocalDB {
   // ===============================
   // 🔹 جلب كل الأسئلة
   // ===============================
-  static Future<List<Map<String, dynamic>>> getAllQuestions() async {
-    final db = await database;
+  static Future<List<Map<String, dynamic>>> getAllQuestions({
+  int limit = 20,
+  int offset = 0,
+   }) async {
+  final db = await database;
 
-    return await db.query(
-      "questions",
-      orderBy: "id DESC",
-    );
-  }
-
+   return await db.query(
+    "questions",
+    orderBy: "id DESC",
+    limit: limit,
+    offset: offset,
+   );
+ }
   // ===============================
   // 🔹 جلب غير المجابة
   // ===============================
-  static Future<List<Map<String, dynamic>>> getUnanswered() async {
-    final db = await database;
+  static Future<List<Map<String, dynamic>>> getUnanswered({
+  int limit = 20,
+  int offset = 0,
+}) async {
+  final db = await database;
 
-    return await db.query(
-      "questions",
-      where: "status = ?",
-      whereArgs: [0],
-      orderBy: "id DESC",
-    );
-  }
-
+  return await db.query(
+    "questions",
+    where: "status = ?",
+    whereArgs: [0],
+    orderBy: "id DESC",
+    limit: limit,
+    offset: offset,
+  );
+}
   // ===============================
   // 🔹 جلب المجابة
   // ===============================
-  static Future<List<Map<String, dynamic>>> getAnswered() async {
-    final db = await database;
+  static Future<List<Map<String, dynamic>>> getAnswered({
+   int limit = 20,
+   int offset = 0,
+   }) async {
+  final db = await database;
 
-    return await db.query(
-      "questions",
-      where: "status = ?",
-      whereArgs: [1],
-      orderBy: "id DESC",
-    );
+   return await db.query(
+    "questions",
+    where: "status = ?",
+    whereArgs: [1],
+    orderBy: "id DESC",
+    limit: limit,
+    offset: offset,
+   );
   }
-
   // ===============================
   // 🔹 حذف سؤال
   // ===============================

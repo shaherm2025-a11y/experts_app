@@ -67,33 +67,47 @@ class ApiService {
   }
 
   // إرسال إجابة من الخبير
-    static Future<bool> answerQuestion({
-  required int questionId,
-  required int expertId,
-  required String answer,
-  File? audioFile,
-}) async {
+  static Future<bool> answerQuestion(
+      int questionId, String answerText, {File? audioFile}) async {
+    try {
+      var uri = Uri.parse("$baseUrl/answer_question/$questionId");
+      var request = http.MultipartRequest('POST', uri);
+      request.fields['answer'] = answerText;
 
-  var request = http.MultipartRequest(
-    'PUT',
-    Uri.parse('$baseUrl/answer_question/$questionId'),
-  );
+      if (audioFile != null && audioFile.existsSync()) {
+        request.files.add(
+          await http.MultipartFile.fromPath('audio', audioFile.path),
+        );
+      }
 
-  request.fields['expert_id'] = expertId.toString();
-  request.fields['answer'] = answer;
-
-  if (audioFile != null) {
-    request.files.add(
-      await http.MultipartFile.fromPath(
-        'answer_audio',
-        audioFile.path,
-      ),
-    );
+      var response = await request.send();
+      if (response.statusCode == 200) {
+        return true;
+      } else {
+        print("Error sending answer: ${response.statusCode}");
+        return false;
+      }
+    } catch (e) {
+      print("Exception sending answer: $e");
+      return false;
+    }
   }
 
-  var response = await request.send();
-  return response.statusCode == 200;
-}
+  // جلب الأسئلة غير المجابة
+  static Future<List<Map<String, dynamic>>> getQuestions() async {
+    try {
+      final response = await http.get(Uri.parse("$baseUrl/expert_diagnoses"));
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as List;
+        return data.map((q) => q as Map<String, dynamic>).toList();
+      } else {
+        return [];
+      }
+    } catch (e) {
+      print("Error fetching questions: $e");
+      return [];
+    }
+  }
 
 // تعديل بيانات خبير (للخبير أو للمدير)
   static Future<bool> updateExpert({

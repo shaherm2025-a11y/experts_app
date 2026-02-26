@@ -26,31 +26,22 @@
 	  
 	  final AudioPlayer player = AudioPlayer();
 	  final AudioRecorder record = AudioRecorder();
-	  Timer? _timer;
 	  
 
 	  @override
-      void initState() {
-       super.initState();
-
-        _loadQuestions();
-       syncUnsyncedAnswers();
-
-      _timer = Timer.periodic(
-       const Duration(minutes: 5),
-        (_) {
-      if (!mounted) return;
-
-      _loadQuestions();
-      syncUnsyncedAnswers();
-      },
-    );
-    }
+	   void initState() {
+		super.initState();
+		 _loadQuestions();
+		
+		 Timer.periodic(const Duration(seconds:300), (timer) {
+		   if (mounted) _loadQuestions();
+		 });
+		}
+	  
 	  
 	  
 	  @override
 	  void dispose() {
-	    _timer?.cancel();   // ⭐ مهم جداً
 		player.dispose();   // 👈 هنا
 		record.dispose();
 		super.dispose();
@@ -68,30 +59,7 @@
 
 	  return file.path;
 	}
-    
-	Future<void> syncUnsyncedAnswers() async {
-    final unsynced = await LocalDB.getUnsyncedAnswers();
 
-    for (var q in unsynced) {
-     final success = await ApiService.answerQuestion(
-      q['id'],
-      q['answer'] ?? "",
-      audioFile: q['answer_audio_path'] != null
-          ? File(q['answer_audio_path'])
-          : null,
-       );
-
-      if (success) {
-        await LocalDB.updateAnswer(
-         q['id'],
-         q['answer'],
-         q['answer_audio_path'],
-         isSynced: 1,
-       );
-     }
-   }
-  }
-	
 	Future<void> _loadQuestions() async {
 	  setState(() => loading = true);
 
@@ -314,74 +282,39 @@
 				  onPressed: () => Navigator.pop(context),
 				),
 				ElevatedButton(
-                child: const Text('إرسال'),
-                onPressed: () async {
+				  child: const Text('إرسال'),
+				  onPressed: () async {
+					try {
+					  // ارسال النص + مسار الصوت إن وجد
+					  final success = await ApiService.answerQuestion(
+						q['id'],
+						answerController.text,
+						audioFile: q['answer_audio_path'] != null
+							? File(q['answer_audio_path'])
+							: null,
+					  );
 
-    final answerText = answerController.text.trim();
-
-    if (answerText.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('يرجى كتابة الرد أولاً')),
-      );
-      return;
-    }
-
-    try {
-
-      // 1️⃣ حفظ الرد محلياً أولاً (غير متزامن)
-      await LocalDB.updateAnswer(
-        q['id'],
-        answerText,
-        q['answer_audio_path'],
-        isSynced: 0, // لم يُرسل بعد
-      );
-
-      // 2️⃣ محاولة الإرسال للسيرفر
-      final success = await ApiService.answerQuestion(
-        q['id'],
-        answerText,
-        audioFile: q['answer_audio_path'] != null
-            ? File(q['answer_audio_path'])
-            : null,
-      );
-
-      if (success) {
-
-        // 3️⃣ تحديث الحالة إلى متزامن
-        await LocalDB.updateAnswer(
-          q['id'],
-          answerText,
-          q['answer_audio_path'],
-          isSynced: 1,
-        );
-
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('تم إرسال الرد بنجاح')),
-        );
-
-      } else {
-
-        // لم يُرسل - سيُرسل لاحقاً
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('تم حفظ الرد وسيتم إرساله عند توفر الإنترنت')),
-        );
-      }
-
-      Navigator.pop(context);
-      _loadQuestions();
-
-    } catch (e) {
-
-      // في حالة خطأ كامل
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('تم حفظ الرد محلياً وسيتم إرساله لاحقاً')),
-      );
-
-      Navigator.pop(context);
-      _loadQuestions();
-    }
-  },
-),
+					  if (success) {
+						await LocalDB.updateAnswer(
+						q['id'],
+						answerController.text.trim(),
+						q['answer_audio_path'],
+						);
+						Navigator.pop(context);
+						ScaffoldMessenger.of(context).showSnackBar(
+						  const SnackBar(content: Text('تم إرسال الرد')),
+						);
+						_loadQuestions(); // إعادة تحميل الأسئلة بعد الرد
+					  } else {
+						ScaffoldMessenger.of(context).showSnackBar(
+						  const SnackBar(content: Text('فشل إرسال الرد')),
+						);
+					  }
+					} catch (e) {
+					  print("خطأ في إرسال الرد: $e");
+					}
+				  },
+				),
 			  ],
 			);
 		  });
