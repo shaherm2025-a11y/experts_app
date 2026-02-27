@@ -49,30 +49,52 @@ class LocalDB {
     )
   ''');
 }
+static Future<void> insertOrUpdateQuestion(
+    Map<String, dynamic> data) async {
 
-static Future<void> insertOrUpdateQuestion(Map<String, dynamic> data) async {
   final db = await database;
 
-  await db.insert(
+  final existing = await db.query(
     "questions",
-    {
-      "id": data["id"],
-      "question": data["question"],
-      "answer": data["answer"],
-      "expert_name": data["expert_name"],
-      "image_path": data["image_path"],
-      "question_audio_path": data["question_audio_path"],
-      "answer_audio_path": data["answer_audio_path"],
-      "status": data["status"] ?? 0,
-      "question_date": data["question_date"],
-      "diagnosis_date": data["diagnosis_date"],
-      "created_at": DateTime.now().toIso8601String(),
-    },
-    conflictAlgorithm: ConflictAlgorithm.replace,
+    where: "id = ?",
+    whereArgs: [data["id"]],
   );
+
+  if (existing.isEmpty) {
+
+    // ? ÅÏÎÇá ÌÏíÏ
+    await db.insert(
+      "questions",
+      {
+        "id": data["id"],
+        "question": data["question"],
+        "answer": data["answer"],
+        "expert_name": data["expert_name"],
+        "status": data["status"] ?? 0,
+        "question_date": data["question_date"],
+        "diagnosis_date": data["diagnosis_date"],
+        "created_at": DateTime.now().toIso8601String(),
+      },
+    );
+
+  } else {
+
+    // ? ÊÍÏíË ÈÏæä ÍÐÝ ÇáãÓÇÑÇÊ
+    await db.update(
+      "questions",
+      {
+        "question": data["question"],
+        "answer": data["answer"],
+        "expert_name": data["expert_name"],
+        "status": data["status"] ?? 0,
+        "question_date": data["question_date"],
+        "diagnosis_date": data["diagnosis_date"],
+      },
+      where: "id = ?",
+      whereArgs: [data["id"]],
+    );
+  }
 }
-  
- 
   
   // ===============================
   // ðŸ”¹ ØªØ­Ø¯ÙŠØ« Ø§Ù„Ø±Ø¯ (Ù†Øµ + ØµÙˆØª)

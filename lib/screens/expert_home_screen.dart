@@ -57,18 +57,20 @@
 	  }
 	  
 	  
+Future<String> _downloadAndSaveFile(String url, String fileName) async {
+  final response = await http.get(Uri.parse(url));
 
-	  Future<String> _downloadAndSaveFile(String url, String fileName) async {
-	  final response = await http.get(Uri.parse(url));
+  if (response.statusCode != 200) {
+    throw Exception("فشل تحميل الملف: $url");
+  }
 
-	  final dir = await getApplicationDocumentsDirectory();
-	  final file = File('${dir.path}/$fileName');
+  final dir = await getApplicationDocumentsDirectory();
+  final file = File('${dir.path}/$fileName');
 
-	  await file.writeAsBytes(response.bodyBytes);
+  await file.writeAsBytes(response.bodyBytes);
 
-	  return file.path;
-	}
-    
+  return file.path;
+}
 	Future<void> syncUnsyncedAnswers() async {
     final unsynced = await LocalDB.getUnsyncedAnswers();
 
