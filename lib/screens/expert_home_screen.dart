@@ -64,10 +64,17 @@ Future<String> _downloadAndSaveFile(String url, String fileName) async {
     throw Exception("فشل تحميل الملف: $url");
   }
 
+  // 🔥 تأكد أن الملف ليس فارغ
+  if (response.bodyBytes.isEmpty) {
+    throw Exception("الملف فارغ: $url");
+  }
+
   final dir = await getApplicationDocumentsDirectory();
   final file = File('${dir.path}/$fileName');
 
   await file.writeAsBytes(response.bodyBytes);
+
+  print("Saved file: ${file.path} size=${response.bodyBytes.length}");
 
   return file.path;
 }
