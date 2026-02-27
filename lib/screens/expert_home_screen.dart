@@ -249,9 +249,6 @@ Future<String> _downloadAndSaveFile(String url, String fileName) async {
 						  // طلب الإذن
 						 bool hasPermission = await record.hasPermission();
 
-                         if (!hasPermission) {
-                           hasPermission = await record.requestPermission();
-                          }
 
                          if (!hasPermission) {
                           ScaffoldMessenger.of(context).showSnackBar(
