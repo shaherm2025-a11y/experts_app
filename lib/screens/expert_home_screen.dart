@@ -248,13 +248,17 @@ Future<String> _downloadAndSaveFile(String url, String fileName) async {
 
 						  // طلب الإذن
 						 bool hasPermission = await record.hasPermission();
-						if (!hasPermission) {
-						  ScaffoldMessenger.of(context).showSnackBar(
-						  const SnackBar(content: Text('يرجى السماح باستخدام الميكروفون')),
-						  );
-						  return;
-						 }
 
+                         if (!hasPermission) {
+                           hasPermission = await record.requestPermission();
+                          }
+
+                         if (!hasPermission) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('يرجى السماح باستخدام الميكروفون')),
+                           );
+                          return;
+                         }
 						// بدء التسجيل
 						final dir = await getApplicationDocumentsDirectory();
                         final path = '${dir.path}/answer_${q['id']}.m4a';
@@ -418,100 +422,133 @@ Future<String> _downloadAndSaveFile(String url, String fileName) async {
 		),
 	  );
 	}
-	Widget _buildQuestionCard(Map<String, dynamic> q, {bool answeredCard = false}) {
-	  return Card(
-		margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-		elevation: 4,
-		shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-		child: ListTile(
-		  contentPadding: const EdgeInsets.all(12),
-		  title: Text(
-			q['question'],
-			style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-		  ),
-		  subtitle: answeredCard
-			  ? Padding(
-				  padding: const EdgeInsets.only(top: 8.0),
-				  child: Column(
-					crossAxisAlignment: CrossAxisAlignment.start,
-					children: [
-					  // زر تشغيل صوت الاستفسار
-					  if (q['question_audio_path'] != null &&
-						  File(q['question_audio_path']).existsSync())
-						IconButton(
-						  icon: const Icon(Icons.volume_up),
-						  onPressed: () async {
-							try {
-							  await player.stop(); // توقف أي تشغيل سابق
-							  await player.play(
-								  DeviceFileSource(q['question_audio_path']));
-							} catch (e) {
-							  print("خطأ في تشغيل صوت الاستفسار: $e");
-							}
-						  },
-						),
-					  // زر تشغيل صوت الرد
-					  if (q['answer_audio_path'] != null &&
-						  File(q['answer_audio_path']).existsSync())
-						IconButton(
-						  icon: const Icon(Icons.play_arrow),
-						  onPressed: () async {
-							try {
-							  await player.stop(); // توقف أي تشغيل سابق
-							  await player.play(
-								  DeviceFileSource(q['answer_audio_path']));
-							} catch (e) {
-							  print("خطأ في تشغيل صوت الرد: $e");
-							}
-						  },
-						),
-					  const Divider(),
-					  Text(
-						'الإجابة (${q['expert_name'] ?? 'مجهول'}): ${q['answer'] ?? "لا توجد"}',
-						style: const TextStyle(fontSize: 14, color: Colors.black87),
-					  ),
-					  const SizedBox(height: 4),
-					  Text(
-						'📅 تاريخ الرد: ${q['diagnosis_date'] ?? "غير متاح"}',
-						style: const TextStyle(fontSize: 13, color: Colors.grey),
-					  ),
-					  const SizedBox(height: 4),
-					  Text(
-						'📅 تاريخ الاستفسار: ${q['question_date'] ?? "غير متاح"}',
-						style: const TextStyle(fontSize: 13, color: Colors.grey),
-					  ),
-					],
-				  ),
-				)
-			  : null,
-		  leading: GestureDetector(
-			onTap: () => _showFullImage(q['image_path']),
-			child: Container(
-			  width: 100,
-			  height: 100,
-			  decoration: BoxDecoration(
-				borderRadius: BorderRadius.circular(12),
-				image: q['image_path'] != null && File(q['image_path']).existsSync()
-					? DecorationImage(
-						image: FileImage(File(q['image_path'])),
-						fit: BoxFit.cover,
-					  )
-					: const DecorationImage(
-						image: AssetImage("assets/placeholder.png"),
-						fit: BoxFit.cover,
-					  ),
-			  ),
-			),
-		  ),
-		  trailing: !answeredCard
-			  ? IconButton(
-				  icon: const Icon(Icons.reply, color: Colors.green, size: 28),
-				  onPressed: () => _showAnswerDialog(q),
-				)
-			  : null,
-		),
-	  );
-	}
+Widget _buildQuestionCard(Map<String, dynamic> q, {bool answeredCard = false}) {
+  return Card(
+    margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+    elevation: 4,
+    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+    child: ListTile(
+      contentPadding: const EdgeInsets.all(12),
+
+      // =============================
+      // عنوان السؤال
+      // =============================
+      title: Text(
+        q['question'],
+        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+      ),
+
+      // =============================
+      // المحتوى السفلي
+      // =============================
+      subtitle: Padding(
+        padding: const EdgeInsets.only(top: 8.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+
+            // 🔊 زر تشغيل صوت الاستفسار (يظهر دائماً)
+            if (q['question_audio_path'] != null &&
+                File(q['question_audio_path']).existsSync())
+              IconButton(
+                icon: const Icon(Icons.volume_up),
+                tooltip: "تشغيل صوت الاستفسار",
+                onPressed: () async {
+                  try {
+                    await player.stop();
+                    await player.play(
+                      DeviceFileSource(q['question_audio_path']),
+                    );
+                  } catch (e) {
+                    print("خطأ في تشغيل صوت الاستفسار: $e");
+                  }
+                },
+              ),
+
+            // =============================
+            // محتوى الرد (يظهر فقط في المجابة)
+            // =============================
+            if (answeredCard) ...[
+
+              // 🔊 زر تشغيل صوت الرد
+              if (q['answer_audio_path'] != null &&
+                  File(q['answer_audio_path']).existsSync())
+                IconButton(
+                  icon: const Icon(Icons.play_arrow),
+                  tooltip: "تشغيل صوت الرد",
+                  onPressed: () async {
+                    try {
+                      await player.stop();
+                      await player.play(
+                        DeviceFileSource(q['answer_audio_path']),
+                      );
+                    } catch (e) {
+                      print("خطأ في تشغيل صوت الرد: $e");
+                    }
+                  },
+                ),
+
+              const Divider(),
+
+              Text(
+                'الإجابة (${q['expert_name'] ?? 'مجهول'}): ${q['answer'] ?? "لا توجد"}',
+                style: const TextStyle(fontSize: 14, color: Colors.black87),
+              ),
+
+              const SizedBox(height: 4),
+
+              Text(
+                '📅 تاريخ الرد: ${q['diagnosis_date'] ?? "غير متاح"}',
+                style: const TextStyle(fontSize: 13, color: Colors.grey),
+              ),
+
+              const SizedBox(height: 4),
+
+              Text(
+                '📅 تاريخ الاستفسار: ${q['question_date'] ?? "غير متاح"}',
+                style: const TextStyle(fontSize: 13, color: Colors.grey),
+              ),
+            ],
+          ],
+        ),
+      ),
+
+      // =============================
+      // صورة السؤال
+      // =============================
+      leading: GestureDetector(
+        onTap: () => _showFullImage(q['image_path']),
+        child: Container(
+          width: 100,
+          height: 100,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            image: q['image_path'] != null &&
+                    File(q['image_path']).existsSync()
+                ? DecorationImage(
+                    image: FileImage(File(q['image_path'])),
+                    fit: BoxFit.cover,
+                  )
+                : const DecorationImage(
+                    image: AssetImage("assets/placeholder.png"),
+                    fit: BoxFit.cover,
+                  ),
+          ),
+        ),
+      ),
+
+      // =============================
+      // زر الرد (لغير المجابة فقط)
+      // =============================
+      trailing: !answeredCard
+          ? IconButton(
+              icon: const Icon(Icons.reply, color: Colors.green, size: 28),
+              onPressed: () => _showAnswerDialog(q),
+            )
+          : null,
+    ),
+  );
+}
 	  @override
 	  Widget build(BuildContext context) {
 		if (loading) {
