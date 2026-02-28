@@ -20,7 +20,7 @@ class ExpertsApp extends StatelessWidget {
       home: const LoginScreen(),
       routes: {
         '/admin': (context) => const AdminDashboard(),
-        '/expert': (context) => const ExpertHomeScreen(),
+       // '/expert': (context) => const ExpertHomeScreen(),
       },
     );
   }

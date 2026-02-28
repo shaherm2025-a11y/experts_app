@@ -10,15 +10,25 @@
 	import 'local_db.dart';
 
 
+	//class ExpertHomeScreen extends StatefulWidget {
+	  //final int expertId;
+
+	 // const ExpertHomeScreen({super.key, this.expertId = 1});
+
+	 // @override
+	 // State<ExpertHomeScreen> createState() => _ExpertHomeScreenState();
+	//}
+
 	class ExpertHomeScreen extends StatefulWidget {
-	  final int expertId;
+    final int expertId;
 
-	  const ExpertHomeScreen({super.key, this.expertId = 1});
+    const ExpertHomeScreen({Key? key, required this.expertId})
+      : super(key: key);
 
-	  @override
-	  State<ExpertHomeScreen> createState() => _ExpertHomeScreenState();
-	}
-
+    @override
+    State<ExpertHomeScreen> createState() => _ExpertHomeScreenState();
+    }
+	
 	class _ExpertHomeScreenState extends State<ExpertHomeScreen> {
 	  List<Map<String, dynamic>> unanswered = [];
 	  List<Map<String, dynamic>> answered = [];
@@ -85,6 +95,7 @@ Future<String> _downloadAndSaveFile(String url, String fileName) async {
      final success = await ApiService.answerQuestion(
       q['id'],
       q['answer'] ?? "",
+	  widget.expertId,
       audioFile: q['answer_audio_path'] != null
           ? File(q['answer_audio_path'])
           : null,
@@ -357,6 +368,7 @@ Future<String> _downloadAndSaveFile(String url, String fileName) async {
       final success = await ApiService.answerQuestion(
         q['id'],
         answerText,
+	    widget.expertId,
         audioFile: audioAnswerFile,
       );
 

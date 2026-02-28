@@ -68,30 +68,40 @@ class ApiService {
 
   // إرسال إجابة من الخبير
   static Future<bool> answerQuestion(
-      int questionId, String answerText, {File? audioFile}) async {
-    try {
+    int questionId,
+    String answerText,
+    int expertId,      // 👈 أضف هذا
+    {File? audioFile,}
+     ) async {
+     try {
       var uri = Uri.parse("$baseUrl/answer_question/$questionId");
-      var request = http.MultipartRequest('PUT', uri);
-      request.fields['answer'] = answerText;
 
-      if (audioFile != null && audioFile.existsSync()) {
+      var request = http.MultipartRequest('PUT', uri);
+
+    // 🔹 الحقول النصية
+      request.fields['answer'] = answerText;
+      request.fields['expert_id'] = expertId.toString();
+
+    // 🔹 ملف الصوت (اختياري)
+      if (audioFile != null && await audioFile.exists()) {
         request.files.add(
-          await http.MultipartFile.fromPath('audio', audioFile.path),
+        await http.MultipartFile.fromPath(
+          'answer_audio',   // 👈 الاسم الصحيح
+          audioFile.path,
+        ),
         );
-      }
+     }
 
       var response = await request.send();
-      if (response.statusCode == 200) {
-        return true;
-      } else {
-        print("Error sending answer: ${response.statusCode}");
-        return false;
-      }
-    } catch (e) {
+
+      print("STATUS: ${response.statusCode}");
+
+      return response.statusCode == 200;
+     } catch (e) {
       print("Exception sending answer: $e");
       return false;
     }
-  }
+   }
 
   // جلب الأسئلة غير المجابة
   static Future<List<Map<String, dynamic>>> getQuestions() async {
