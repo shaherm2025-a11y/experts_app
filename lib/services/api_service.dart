@@ -71,7 +71,7 @@ class ApiService {
       int questionId, String answerText, {File? audioFile}) async {
     try {
       var uri = Uri.parse("$baseUrl/answer_question/$questionId");
-      var request = http.MultipartRequest('POST', uri);
+      var request = http.MultipartRequest('PUT', uri);
       request.fields['answer'] = answerText;
 
       if (audioFile != null && audioFile.existsSync()) {
