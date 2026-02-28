@@ -34,12 +34,18 @@ if (res['status'] == 'success') {
   if (res['is_admin'] == true) {
     Navigator.pushReplacementNamed(context, '/admin');
   } else {
-    Navigator.pushReplacement(
-      context,
-      MaterialPageRoute(
-        builder: (_) => ExpertHomeScreen(expertId: expertId),
-      ),
-    );
+    //Navigator.pushReplacement(
+     // context,
+     // MaterialPageRoute(
+     //   builder: (_) => ExpertHomeScreen(expertId: expertId),
+     // ),
+   // );
+   
+    Navigator.pushReplacementNamed(
+    context,
+   '/expert',
+    arguments: expertId,
+   );
   }
 }
 
