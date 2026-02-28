@@ -217,6 +217,7 @@ Future<String> _downloadAndSaveFile(String url, String fileName) async {
 	  TextEditingController answerController =
 		  TextEditingController(text: q['answer'] ?? '');
 	  bool isRecording = false;
+	  File? audioAnswerFile;
 
 	  showDialog(
 		context: context,
@@ -242,64 +243,68 @@ Future<String> _downloadAndSaveFile(String url, String fileName) async {
 						icon: Icon(isRecording ? Icons.stop : Icons.mic),
 						color: isRecording ? Colors.red : Colors.blue,
 						onPressed: () async {
-						try {
+  try {
 
-						 if (!isRecording) {
+    if (!isRecording) {
 
-						  // طلب الإذن
-						 bool hasPermission = await record.hasPermission();
+      bool hasPermission = await record.hasPermission();
+      if (!hasPermission) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('يرجى السماح باستخدام الميكروفون')),
+        );
+        return;
+      }
 
+      final dir = await getTemporaryDirectory();
 
-                         if (!hasPermission) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('يرجى السماح باستخدام الميكروفون')),
-                           );
-                          return;
-                         }
-						// بدء التسجيل
-						final dir = await getApplicationDocumentsDirectory();
-                        final path = '${dir.path}/answer_${q['id']}.m4a';
-						await record.start(
-						 const RecordConfig(
-						 encoder: AudioEncoder.aacLc,
-						 bitRate: 128000,
-						 sampleRate: 44100,
-						  ),
-						 path: path,
-						);
+      final path =
+          '${dir.path}/answer_${DateTime.now().millisecondsSinceEpoch}.m4a';
 
-					   setState(() => isRecording = true);
+      await record.start(
+        const RecordConfig(
+          encoder: AudioEncoder.aacLc,
+          bitRate: 128000,
+          sampleRate: 44100,
+        ),
+        path: path,
+      );
 
-					   } else {
+      setState(() => isRecording = true);
 
-					   // إيقاف التسجيل
-						 String? path = await record.stop();
+    } else {
 
-						 setState(() => isRecording = false);
+      String? path = await record.stop();
 
-						 if (path != null) {
+      setState(() => isRecording = false);
 
-						// حفظ المسار في الخريطة
-						  q['answer_audio_path'] = path;
+      if (path != null) {
 
-						  ScaffoldMessenger.of(context).showSnackBar(
-						  const SnackBar(content: Text('تم تسجيل الصوت بنجاح')),
-						   );
+        // 🔥 انسخه لمكان دائم مثل كود المزارع
+        final dir = await getApplicationDocumentsDirectory();
 
-						} else {
-						  ScaffoldMessenger.of(context).showSnackBar(
-						  const SnackBar(content: Text('فشل في حفظ التسجيل')),
-						  );
-						 }
-						}
+        final savedPath =
+            '${dir.path}/answer_${q['id']}_${DateTime.now().millisecondsSinceEpoch}.m4a';
 
-					   } catch (e) {
-						print("Recording error: $e");
-						ScaffoldMessenger.of(context).showSnackBar(
-						const SnackBar(content: Text('حدث خطأ أثناء التسجيل')),
-						 );
-					   }
-					  },
+        final savedFile = await File(path).copy(savedPath);
+
+        audioAnswerFile = savedFile;
+
+        // احفظ المسار في السؤال
+        q['answer_audio_path'] = savedFile.path;
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('تم تسجيل صوت الرد بنجاح')),
+        );
+      }
+    }
+
+  } catch (e) {
+    print("Recording error: $e");
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('حدث خطأ أثناء التسجيل')),
+    );
+  }
+},
 					  ),
 					  const SizedBox(width: 8),
 					  if (q['answer_audio_path'] != null)
@@ -323,9 +328,9 @@ Future<String> _downloadAndSaveFile(String url, String fileName) async {
 				  child: const Text('إلغاء'),
 				  onPressed: () => Navigator.pop(context),
 				),
-				ElevatedButton(
-                child: const Text('إرسال'),
-                onPressed: () async {
+	ElevatedButton(
+  child: const Text('إرسال'),
+  onPressed: () async {
 
     final answerText = answerController.text.trim();
 
@@ -338,60 +343,54 @@ Future<String> _downloadAndSaveFile(String url, String fileName) async {
 
     try {
 
-      // 1️⃣ حفظ الرد محلياً أولاً (غير متزامن)
+      final audioPath = audioAnswerFile?.path;
+
+      // حفظ محلي غير متزامن
       await LocalDB.updateAnswer(
         q['id'],
         answerText,
-        q['answer_audio_path'],
-        isSynced: 0, // لم يُرسل بعد
+        audioPath,
+        isSynced: 0,
       );
 
-      // 2️⃣ محاولة الإرسال للسيرفر
+      // محاولة الإرسال
       final success = await ApiService.answerQuestion(
         q['id'],
         answerText,
-        audioFile: q['answer_audio_path'] != null
-            ? File(q['answer_audio_path'])
-            : null,
+        audioFile: audioAnswerFile,
       );
 
       if (success) {
-
-        // 3️⃣ تحديث الحالة إلى متزامن
         await LocalDB.updateAnswer(
           q['id'],
           answerText,
-          q['answer_audio_path'],
+          audioPath,
           isSynced: 1,
         );
 
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('تم إرسال الرد بنجاح')),
         );
-
       } else {
-
-        // لم يُرسل - سيُرسل لاحقاً
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('تم حفظ الرد وسيتم إرساله عند توفر الإنترنت')),
+          const SnackBar(
+            content: Text('تم حفظ الرد وسيتم إرساله عند توفر الإنترنت'),
+          ),
         );
       }
 
-      Navigator.pop(context);
-      _loadQuestions();
-
     } catch (e) {
-
-      // في حالة خطأ كامل
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('تم حفظ الرد محلياً وسيتم إرساله لاحقاً')),
+        const SnackBar(
+          content: Text('تم حفظ الرد محلياً وسيتم إرساله لاحقاً'),
+        ),
       );
-
-      Navigator.pop(context);
-      _loadQuestions();
     }
+
+    Navigator.pop(context);
+    _loadQuestions();
   },
-),
+)
 			  ],
 			);
 		  });
