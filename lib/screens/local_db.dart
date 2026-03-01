@@ -45,6 +45,7 @@ class LocalDB {
       question_date TEXT,
       diagnosis_date TEXT,
       created_at TEXT,
+	  expert_id INTEGER,
 	    is_synced INTEGER DEFAULT 1
     )
   ''');
@@ -116,10 +117,11 @@ static Future<void> insertOrUpdateQuestion(
   }
 
  // «·ÃœÌœ… 
-  static Future<void> updateAnswer(
+ static Future<void> updateAnswer(
   int id,
   String answer,
   String? audioPath,
+  int expertId,   // ? √÷› Â–«
   {int isSynced = 0}
 ) async {
   final db = await database;
@@ -130,6 +132,7 @@ static Future<void> insertOrUpdateQuestion(
       "answer": answer,
       "answer_audio_path": audioPath,
       "status": 1,
+      "expert_id": expertId,   // ? „Â„ Ãœ«
       "is_synced": isSynced,
       "diagnosis_date": DateTime.now().toIso8601String(),
     },
@@ -137,7 +140,6 @@ static Future<void> insertOrUpdateQuestion(
     whereArgs: [id],
   );
 }
-  
   
   static Future<List<Map<String, dynamic>>> getUnsyncedAnswers() async {
   final db = await database;

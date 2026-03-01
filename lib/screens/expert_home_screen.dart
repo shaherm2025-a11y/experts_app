@@ -89,29 +89,30 @@ Future<String> _downloadAndSaveFile(String url, String fileName) async {
   return file.path;
 }
 	Future<void> syncUnsyncedAnswers() async {
-    final unsynced = await LocalDB.getUnsyncedAnswers();
+  final unsynced = await LocalDB.getUnsyncedAnswers();
 
-    for (var q in unsynced) {
-     final success = await ApiService.answerQuestion(
+  for (var q in unsynced) {
+    final success = await ApiService.answerQuestion(
       q['id'],
       q['answer'] ?? "",
-	  widget.expertId,
+      q['expert_id'],   // ✅ رقم الخبير الصحيح لكل رد
       audioFile: q['answer_audio_path'] != null
           ? File(q['answer_audio_path'])
           : null,
-       );
+    );
 
-      if (success) {
-        await LocalDB.updateAnswer(
-         q['id'],
-         q['answer'],
-         q['answer_audio_path'],
-         isSynced: 1,
-       );
-     }
-   }
+    if (success) {
+      await LocalDB.updateAnswer(
+        q['id'],
+        q['answer'],
+        q['answer_audio_path'],
+        q['expert_id'],   // لا تغيّره
+        isSynced: 1,
+      );
+    }
   }
-	
+}
+
 	Future<void> _loadQuestions() async {
 	  setState(() => loading = true);
 
@@ -201,6 +202,7 @@ Future<String> _downloadAndSaveFile(String url, String fileName) async {
             q['id'],
             q['answer'] ?? "",
             answerAudioPath,
+			widget.expertId,   // ✅ مهم جداً
             );
            }
 
@@ -365,15 +367,17 @@ Future<String> _downloadAndSaveFile(String url, String fileName) async {
         q['id'],
         answerText,
         audioPath,
+		widget.expertId,   // ✅ مهم جداً
         isSynced: 0,
+		
       );
 
       // محاولة الإرسال
       final success = await ApiService.answerQuestion(
         q['id'],
         answerText,
-	    widget.expertId,
         audioFile: audioAnswerFile,
+		widget.expertId,
       );
 
       if (success) {
@@ -381,6 +385,7 @@ Future<String> _downloadAndSaveFile(String url, String fileName) async {
           q['id'],
           answerText,
           audioPath,
+		  widget.expertId,
           isSynced: 1,
         );
 
