@@ -198,11 +198,9 @@ Future<String> _downloadAndSaveFile(String url, String fileName) async {
            "a_${q['id']}.mp3",
             );
 
-            await LocalDB.updateAnswer(
+            await LocalDB.updateAnswerAudioPath(
             q['id'],
-            q['answer'] ?? "",
             answerAudioPath,
-			widget.expertId,   // ✅ مهم جداً
             );
            }
 

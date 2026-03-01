@@ -252,4 +252,21 @@ static Future<void> insertOrUpdateQuestion(
     final db = await database;
     await db.delete("questions");
   }
+  
+  static Future<void> updateAnswerAudioPath(
+  int id,
+  String audioPath,
+) async {
+  final db = await database;
+
+  await db.update(
+    "questions",
+    {
+      "answer_audio_path": audioPath,
+    },
+    where: "id = ?",
+    whereArgs: [id],
+  );
 }
+}
+
