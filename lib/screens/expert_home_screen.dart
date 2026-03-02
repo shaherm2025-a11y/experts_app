@@ -252,41 +252,29 @@ Future<void> _showAnswerDialog(Map<String, dynamic> q) async {
 }
 
  Future<void> stopRecording() async {
-   try {
+  try {
+    final path = await record.stop();
 
-     final path = await record.stop();
-
-     setState(() => isRecording = false);
-
-     if (path == null || path.isEmpty) {
-       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('فشل حفظ التسجيل')),
-      );
-       return;
-     }
+    if (path == null || path.isEmpty) {
+      setState(() => isRecording = false);
+      return;
+    }
 
     final dir = await getApplicationDocumentsDirectory();
-
     final savedPath =
         '${dir.path}/answer_${q['id']}_${DateTime.now().millisecondsSinceEpoch}.m4a';
 
     final savedFile = await File(path).copy(savedPath);
 
-    audioAnswerFile = savedFile;
-
-    q['answer_audio_path'] = savedFile.path;
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('تم حفظ التسجيل')),
-    );
-
-    setState(() {});
+    setState(() {
+      isRecording = false;
+      audioAnswerFile = savedFile;   // 🔥 مهم جداً داخل setState
+    });
 
   } catch (e) {
-    debugPrint("Stop recording error: $e");
+    setState(() => isRecording = false);
   }
 }
-
          Future<void> playAudio() async {
            if (audioAnswerFile == null) return;
 
@@ -299,15 +287,14 @@ Future<void> _showAnswerDialog(Map<String, dynamic> q) async {
             }
           void deleteAudio() {
            if (audioAnswerFile != null &&
-             audioAnswerFile!.existsSync()) {
+            audioAnswerFile!.existsSync()) {
             audioAnswerFile!.deleteSync();
-            }
+             }
 
-           audioAnswerFile = null;
-          q['answer_audio_path'] = null;
-
-          setState(() {});
-         }
+           setState(() {
+            audioAnswerFile = null;   // 🔥 داخل setState
+           });
+           }
           return AlertDialog(
             title: const Text('الرد على الاستفسار'),
             content: Column(
