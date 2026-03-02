@@ -219,74 +219,95 @@ Future<void> _showAnswerDialog(Map<String, dynamic> q) async {
       context: context,
       builder: (context) {
         return StatefulBuilder(builder: (context, setState) {
-          Future<void> startRecording() async {
-            if (!await record.hasPermission()) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('يرجى السماح بالميكروفون')),
-              );
-              return;
+ Future<void> startRecording() async {
+   final hasPermission = await record.hasPermission();
+
+  if (!hasPermission) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('يرجى السماح بالميكروفون')),
+    );
+    return;
+  }
+
+  final dir = await getTemporaryDirectory();
+
+  final path =
+      '${dir.path}/answer_${DateTime.now().millisecondsSinceEpoch}.m4a';
+
+  try {
+    await record.start(
+      const RecordConfig(
+        encoder: AudioEncoder.aacLc,
+        bitRate: 128000,
+        sampleRate: 44100,
+      ),
+      path: path,
+    );
+
+    setState(() => isRecording = true);
+
+  } catch (e) {
+    debugPrint("Start recording error: $e");
+  }
+}
+
+ Future<void> stopRecording() async {
+   try {
+
+     final path = await record.stop();
+
+     setState(() => isRecording = false);
+
+     if (path == null || path.isEmpty) {
+       ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('فشل حفظ التسجيل')),
+      );
+       return;
+     }
+
+    final dir = await getApplicationDocumentsDirectory();
+
+    final savedPath =
+        '${dir.path}/answer_${q['id']}_${DateTime.now().millisecondsSinceEpoch}.m4a';
+
+    final savedFile = await File(path).copy(savedPath);
+
+    audioAnswerFile = savedFile;
+
+    q['answer_audio_path'] = savedFile.path;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('تم حفظ التسجيل')),
+    );
+
+    setState(() {});
+
+  } catch (e) {
+    debugPrint("Stop recording error: $e");
+  }
+}
+
+         Future<void> playAudio() async {
+           if (audioAnswerFile == null) return;
+
+            try {
+             await player.stop();
+             await player.play(DeviceFileSource(audioAnswerFile!.path));
+            } catch (e) {
+            debugPrint("Play error: $e");
+             }
             }
-
-            final dir = await getTemporaryDirectory();
-            final path =
-                '${dir.path}/answer_${DateTime.now().millisecondsSinceEpoch}.m4a';
-
-            await record.start(
-              const RecordConfig(
-                encoder: AudioEncoder.aacLc,
-                bitRate: 128000,
-                sampleRate: 44100,
-              ),
-              path: path,
-            );
-
-            setState(() {
-              isRecording = true;
-              duration = Duration.zero;
-            });
-          }
-
-          Future<void> stopRecording() async {
-            final path = await record.stop();
-            if (path == null) return;
-
-            final dir = await getApplicationDocumentsDirectory();
-            final savedPath =
-                '${dir.path}/answer_${q['id']}_${DateTime.now().millisecondsSinceEpoch}.m4a';
-
-            final savedFile = await File(path).copy(savedPath);
-
-            audioAnswerFile = savedFile;
-            q['answer_audio_path'] = savedFile.path;
-
-            setState(() => isRecording = false);
-          }
-
-          Future<void> playAudio() async {
-            if (audioAnswerFile == null) return;
-
-            await player.stop();
-            await player.play(DeviceFileSource(audioAnswerFile!.path));
-
-            setState(() => isPlaying = true);
-
-            player.onPlayerComplete.listen((_) {
-              setState(() => isPlaying = false);
-            });
-          }
-
           void deleteAudio() {
-            if (audioAnswerFile != null &&
-                audioAnswerFile!.existsSync()) {
-              audioAnswerFile!.deleteSync();
+           if (audioAnswerFile != null &&
+             audioAnswerFile!.existsSync()) {
+            audioAnswerFile!.deleteSync();
             }
 
-            audioAnswerFile = null;
-            q['answer_audio_path'] = null;
+           audioAnswerFile = null;
+          q['answer_audio_path'] = null;
 
-            setState(() {});
-          }
-
+          setState(() {});
+         }
           return AlertDialog(
             title: const Text('الرد على الاستفسار'),
             content: Column(
@@ -307,23 +328,20 @@ Future<void> _showAnswerDialog(Map<String, dynamic> q) async {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    ElevatedButton.icon(
-                      icon: Icon(
-                          isRecording ? Icons.stop : Icons.mic),
-                      label: Text(
-                          isRecording ? 'إيقاف' : 'تسجيل'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor:
-                            isRecording ? Colors.red : Colors.green,
-                      ),
-                      onPressed: () async {
-                        if (isRecording) {
-                          await stopRecording();
-                        } else {
-                          await startRecording();
-                        }
-                      },
+                   ElevatedButton.icon(
+                     icon: Icon(isRecording ? Icons.stop : Icons.mic),
+                     label: Text(isRecording ? 'إيقاف' : 'تسجيل'),
+                     style: ElevatedButton.styleFrom(
+                     backgroundColor: isRecording ? Colors.red : Colors.green,
                     ),
+                   onPressed: () async {
+                   if (isRecording) {
+                    await stopRecording();
+                   } else {
+                   await startRecording();
+                  }
+                  },
+                 )
                   ],
                 ),
 
