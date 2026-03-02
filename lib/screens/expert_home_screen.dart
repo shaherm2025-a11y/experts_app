@@ -1,71 +1,53 @@
-	import 'dart:async';
-	import 'package:flutter/material.dart';
-	import '../services/api_service.dart';
-	import 'edit_profile_screen.dart';
-	import 'package:audioplayers/audioplayers.dart';
-	import 'package:record/record.dart';
-	import 'dart:io';
-	import 'package:path_provider/path_provider.dart';
-	import 'package:http/http.dart' as http;
-	import 'local_db.dart';
+import 'dart:async';
+import 'package:flutter/material.dart';
+import '../services/api_service.dart';
+import 'edit_profile_screen.dart';
+import 'package:audioplayers/audioplayers.dart';
+import 'package:record/record.dart';
+import 'dart:io';
+import 'package:path_provider/path_provider.dart';
+import 'package:http/http.dart' as http;
+import 'local_db.dart';
 
+class ExpertHomeScreen extends StatefulWidget {
+  final int expertId;
 
-	//class ExpertHomeScreen extends StatefulWidget {
-	  //final int expertId;
-
-	 // const ExpertHomeScreen({super.key, this.expertId = 1});
-
-	 // @override
-	 // State<ExpertHomeScreen> createState() => _ExpertHomeScreenState();
-	//}
-
-	class ExpertHomeScreen extends StatefulWidget {
-    final int expertId;
-
-    const ExpertHomeScreen({Key? key, required this.expertId})
+  const ExpertHomeScreen({Key? key, required this.expertId})
       : super(key: key);
 
-    @override
-    State<ExpertHomeScreen> createState() => _ExpertHomeScreenState();
-    }
-	
-	class _ExpertHomeScreenState extends State<ExpertHomeScreen> {
-	  List<Map<String, dynamic>> unanswered = [];
-	  List<Map<String, dynamic>> answered = [];
-	  bool loading = true;
-	  
-	  final AudioPlayer player = AudioPlayer();
-	  final AudioRecorder record = AudioRecorder();
-	  Timer? _timer;
-	  
+  @override
+  State<ExpertHomeScreen> createState() => _ExpertHomeScreenState();
+}
 
-	  @override
-      void initState() {
-       super.initState();
+class _ExpertHomeScreenState extends State<ExpertHomeScreen> {
+  List<Map<String, dynamic>> unanswered = [];
+  List<Map<String, dynamic>> answered = [];
+  bool loading = true;
 
-        _loadQuestions();
-       syncUnsyncedAnswers();
+  final AudioPlayer player = AudioPlayer();
+  final AudioRecorder record = AudioRecorder();
+  Timer? _timer;
 
-      _timer = Timer.periodic(
-       const Duration(minutes: 5),
-        (_) {
+  @override
+  void initState() {
+    super.initState();
+    _loadQuestions();
+    syncUnsyncedAnswers();
+
+    _timer = Timer.periodic(const Duration(minutes: 5), (_) {
       if (!mounted) return;
-
       _loadQuestions();
       syncUnsyncedAnswers();
-      },
-    );
-    }
-	  
-	  
-	  @override
-	  void dispose() {
-	    _timer?.cancel();   // ⭐ مهم جداً
-		player.dispose();   // 👈 هنا
-		record.dispose();
-		super.dispose();
-	  }
-	  
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    player.dispose();
+    record.dispose();
+    super.dispose();
+  }
 	  
 Future<String> _downloadAndSaveFile(String url, String fileName) async {
   final response = await http.get(Uri.parse(url));
@@ -223,199 +205,230 @@ Future<String> _downloadAndSaveFile(String url, String fileName) async {
 		setState(() => loading = false);
 	  }
 	}
+	
+Future<void> _showAnswerDialog(Map<String, dynamic> q) async {
+    TextEditingController answerController =
+        TextEditingController(text: q['answer'] ?? '');
 
-	Future<void> _showAnswerDialog(Map<String, dynamic> q) async {
-	  TextEditingController answerController =
-		  TextEditingController(text: q['answer'] ?? '');
-	  bool isRecording = false;
-	  File? audioAnswerFile;
+    bool isRecording = false;
+    bool isPlaying = false;
+    File? audioAnswerFile;
+    Duration duration = Duration.zero;
 
-	  showDialog(
-		context: context,
-		builder: (context) {
-		  return StatefulBuilder(builder: (context, setState) {
-			return AlertDialog(
-			  title: const Text('الرد على الاستفسار'),
-			  content: Column(
-				mainAxisSize: MainAxisSize.min,
-				children: [
-				  TextField(
-					controller: answerController,
-					maxLines: 3,
-					decoration: const InputDecoration(
-					  hintText: 'اكتب ردك هنا...',
-					  border: OutlineInputBorder(),
-					),
-				  ),
-				  const SizedBox(height: 12),
-				  Row(
-					children: [
-					  IconButton(
-						icon: Icon(isRecording ? Icons.stop : Icons.mic),
-						color: isRecording ? Colors.red : Colors.blue,
-				onPressed: () async {
-  try {
+    showDialog(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(builder: (context, setState) {
+          Future<void> startRecording() async {
+            if (!await record.hasPermission()) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('يرجى السماح بالميكروفون')),
+              );
+              return;
+            }
 
-    if (!isRecording) {
+            final dir = await getTemporaryDirectory();
+            final path =
+                '${dir.path}/answer_${DateTime.now().millisecondsSinceEpoch}.m4a';
 
-      final hasPermission = await record.hasPermission();
+            await record.start(
+              const RecordConfig(
+                encoder: AudioEncoder.aacLc,
+                bitRate: 128000,
+                sampleRate: 44100,
+              ),
+              path: path,
+            );
 
-      if (!hasPermission) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('يرجى السماح باستخدام الميكروفون')),
-        );
-        return;
-      }
+            setState(() {
+              isRecording = true;
+              duration = Duration.zero;
+            });
+          }
 
-      final dir = await getTemporaryDirectory();
+          Future<void> stopRecording() async {
+            final path = await record.stop();
+            if (path == null) return;
 
-      final path =
-          '${dir.path}/answer_${DateTime.now().millisecondsSinceEpoch}.m4a';
+            final dir = await getApplicationDocumentsDirectory();
+            final savedPath =
+                '${dir.path}/answer_${q['id']}_${DateTime.now().millisecondsSinceEpoch}.m4a';
 
-      await record.start(
-        const RecordConfig(
-          encoder: AudioEncoder.aacLc,
-          bitRate: 128000,
-          sampleRate: 44100,
-        ),
-        path: path,
-      );
+            final savedFile = await File(path).copy(savedPath);
 
-      setState(() => isRecording = true);
+            audioAnswerFile = savedFile;
+            q['answer_audio_path'] = savedFile.path;
 
-    } else {
+            setState(() => isRecording = false);
+          }
 
-      final path = await record.stop();
+          Future<void> playAudio() async {
+            if (audioAnswerFile == null) return;
 
-      setState(() => isRecording = false);
+            await player.stop();
+            await player.play(DeviceFileSource(audioAnswerFile!.path));
 
-      // 🔥 إذا لم يتم حفظ الملف لا تعرض خطأ
-      if (path == null || path.isEmpty) return;
+            setState(() => isPlaying = true);
 
-      final dir = await getApplicationDocumentsDirectory();
+            player.onPlayerComplete.listen((_) {
+              setState(() => isPlaying = false);
+            });
+          }
 
-      final savedPath =
-          '${dir.path}/answer_${q['id']}_${DateTime.now().millisecondsSinceEpoch}.m4a';
+          void deleteAudio() {
+            if (audioAnswerFile != null &&
+                audioAnswerFile!.existsSync()) {
+              audioAnswerFile!.deleteSync();
+            }
 
-      final savedFile = await File(path).copy(savedPath);
+            audioAnswerFile = null;
+            q['answer_audio_path'] = null;
 
-      audioAnswerFile = savedFile;
+            setState(() {});
+          }
 
-      // حفظ المسار داخل السؤال
-      q['answer_audio_path'] = savedFile.path;
+          return AlertDialog(
+            title: const Text('الرد على الاستفسار'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: answerController,
+                  maxLines: 3,
+                  decoration: const InputDecoration(
+                    hintText: 'اكتب ردك هنا...',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('تم تسجيل صوت الرد بنجاح')),
-      );
-    }
+                const SizedBox(height: 16),
 
-  } catch (e) {
+                // 🎤 التسجيل
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    ElevatedButton.icon(
+                      icon: Icon(
+                          isRecording ? Icons.stop : Icons.mic),
+                      label: Text(
+                          isRecording ? 'إيقاف' : 'تسجيل'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor:
+                            isRecording ? Colors.red : Colors.green,
+                      ),
+                      onPressed: () async {
+                        if (isRecording) {
+                          await stopRecording();
+                        } else {
+                          await startRecording();
+                        }
+                      },
+                    ),
+                  ],
+                ),
 
-    debugPrint("Recording error: $e");
+                const SizedBox(height: 12),
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('فشل تسجيل الصوت، حاول مرة أخرى'),
-      ),
+                // ▶️ تشغيل / حذف
+                if (audioAnswerFile != null)
+                  Row(
+                    mainAxisAlignment:
+                        MainAxisAlignment.center,
+                    children: [
+                      IconButton(
+                        icon: Icon(isPlaying
+                            ? Icons.stop
+                            : Icons.play_arrow),
+                        onPressed: playAudio,
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.delete,
+                            color: Colors.red),
+                        onPressed: deleteAudio,
+                      ),
+                    ],
+                  ),
+              ],
+            ),
+
+            actions: [
+              TextButton(
+                child: const Text('إلغاء'),
+                onPressed: () => Navigator.pop(context),
+              ),
+
+              ElevatedButton(
+                child: const Text('إرسال'),
+                onPressed: () async {
+                  final answerText =
+                      answerController.text.trim();
+
+                  if (answerText.isEmpty) {
+                    ScaffoldMessenger.of(context)
+                        .showSnackBar(
+                      const SnackBar(
+                          content:
+                              Text('يرجى كتابة الرد')),
+                    );
+                    return;
+                  }
+
+                  try {
+                    final audioPath =
+                        audioAnswerFile?.path;
+
+                    await LocalDB.updateAnswer(
+                      q['id'],
+                      answerText,
+                      audioPath,
+                      widget.expertId,
+                      isSynced: 0,
+                    );
+
+                    final success =
+                        await ApiService.answerQuestion(
+                      q['id'],
+                      answerText,
+                      widget.expertId,
+                      audioFile: audioAnswerFile,
+                    );
+
+                    if (success) {
+                      await LocalDB.updateAnswer(
+                        q['id'],
+                        answerText,
+                        audioPath,
+                        widget.expertId,
+                        isSynced: 1,
+                      );
+
+                      ScaffoldMessenger.of(context)
+                          .showSnackBar(
+                        const SnackBar(
+                            content:
+                                Text('تم إرسال الرد بنجاح')),
+                      );
+                    } else {
+                      ScaffoldMessenger.of(context)
+                          .showSnackBar(
+                        const SnackBar(
+                          content: Text(
+                              'تم حفظ الرد وسيتم إرساله لاحقاً'),
+                        ),
+                      );
+                    }
+                  } catch (_) {}
+
+                  Navigator.pop(context);
+                  _loadQuestions();
+                },
+              ),
+            ],
+          );
+        });
+      },
     );
   }
-},
-					  ),
-					  const SizedBox(width: 8),
-					  if (q['answer_audio_path'] != null)
-						IconButton(
-						  icon: const Icon(Icons.play_arrow),
-						  onPressed: () async {
-							try {
-							  await player.stop();
-							  await player.play(DeviceFileSource(q['answer_audio_path']));
-							} catch (e) {
-							  print("خطأ في تشغيل صوت الرد: $e");
-							}
-						  },
-						),
-					],
-				  ),
-				],
-			  ),
-			  actions: [
-				TextButton(
-				  child: const Text('إلغاء'),
-				  onPressed: () => Navigator.pop(context),
-				),
-	ElevatedButton(
-  child: const Text('إرسال'),
-  onPressed: () async {
-
-    final answerText = answerController.text.trim();
-
-    if (answerText.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('يرجى كتابة الرد أولاً')),
-      );
-      return;
-    }
-
-    try {
-
-      final audioPath = audioAnswerFile?.path;
-
-      // حفظ محلي غير متزامن
-      await LocalDB.updateAnswer(
-        q['id'],
-        answerText,
-        audioPath,
-		widget.expertId,   // ✅ مهم جداً
-        isSynced: 0,
-		
-      );
-
-      // محاولة الإرسال
-      final success = await ApiService.answerQuestion(
-        q['id'],
-        answerText,
-        audioFile: audioAnswerFile,
-		widget.expertId,
-      );
-
-      if (success) {
-        await LocalDB.updateAnswer(
-          q['id'],
-          answerText,
-          audioPath,
-		  widget.expertId,
-          isSynced: 1,
-        );
-
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('تم إرسال الرد بنجاح')),
-        );
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('تم حفظ الرد وسيتم إرساله عند توفر الإنترنت'),
-          ),
-        );
-      }
-
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('تم حفظ الرد محلياً وسيتم إرساله لاحقاً'),
-        ),
-      );
-    }
-
-    Navigator.pop(context);
-    _loadQuestions();
-  },
-)
-			  ],
-			);
-		  });
-		},
-	  );
-	}
 	 void _showFullImage(String? imagePath) {
 	  showDialog(
 		context: context,
