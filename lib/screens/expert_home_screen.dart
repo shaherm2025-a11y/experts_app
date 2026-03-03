@@ -27,13 +27,14 @@ class _ExpertHomeScreenState extends State<ExpertHomeScreen> {
   final AudioPlayer player = AudioPlayer();
   final AudioRecorder record = AudioRecorder();
   Timer? _timer;
- // await FirebaseMessaging.instance.requestPermission();
+  
 
   @override
   void initState() {
     super.initState();
     _loadQuestions();
     syncUnsyncedAnswers();
+	await FirebaseMessaging.instance.requestPermission();
 
     _timer = Timer.periodic(const Duration(minutes: 5), (_) {
       if (!mounted) return;
