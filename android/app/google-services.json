@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "160545783993",
+    "project_id": "expertsapp-6d278",
+    "storage_bucket": "expertsapp-6d278.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:160545783993:android:5bd6614c6da1a6b1c0db68",
+        "android_client_info": {
+          "package_name": "com.example.experts_app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyD29GA2ZkJUOq0J_AoVXLN1U_yYyR4wei4"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

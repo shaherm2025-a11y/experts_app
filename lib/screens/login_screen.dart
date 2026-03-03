@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../services/api_service.dart';
 import 'expert_home_screen.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 
 
 class LoginScreen extends StatefulWidget {
@@ -30,16 +31,26 @@ class _LoginScreenState extends State<LoginScreen> {
     setState(() => _loading = false);
 if (res['status'] == 'success') {
   final expertId = res['expert_id'];
+  
+  // 🔔 طلب إذن الإشعارات (مهم لأندرويد 13)
+    await FirebaseMessaging.instance.requestPermission();
+
+    // 🔔 جلب FCM Token
+    final token = await FirebaseMessaging.instance.getToken();
+    print("FCM TOKEN: $token");
+   
+    // 🔔 إرسال التوكن للسيرفر
+    if (token != null) {
+      await ApiService.saveFcmToken(
+        userId: expertId,
+        role: "expert",
+        token: token,
+      );
+    }
 
   if (res['is_admin'] == true) {
     Navigator.pushReplacementNamed(context, '/admin');
   } else {
-    //Navigator.pushReplacement(
-     // context,
-     // MaterialPageRoute(
-     //   builder: (_) => ExpertHomeScreen(expertId: expertId),
-     // ),
-   // );
    
     Navigator.pushReplacementNamed(
     context,

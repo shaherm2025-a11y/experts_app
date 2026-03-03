@@ -3,9 +3,20 @@ import 'screens/login_screen.dart';
 import 'screens/admin_dashboard.dart';
 import 'screens/expert_home_screen.dart';
 import 'models/expert.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 
-void main() {
-  runApp(const ExpertsApp());
+Future<void> _firebaseBackgroundHandler(RemoteMessage message) async {
+  await Firebase.initializeApp();
+}
+
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await Firebase.initializeApp();
+
+  FirebaseMessaging.onBackgroundMessage(_firebaseBackgroundHandler);
+
+runApp(const ExpertsApp());  
 }
 
 class ExpertsApp extends StatelessWidget {

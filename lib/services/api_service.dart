@@ -144,4 +144,20 @@ class ApiService {
   return response.statusCode == 200;
 }
 
+static Future<void> saveFcmToken({
+  required int userId,
+  required String role,
+  required String token,
+}) async {
+
+  await http.post(
+    Uri.parse("$baseUrl/save_fcm_token"),
+    body: {
+      "user_id": userId.toString(),
+      "role": role,
+      "token": token,
+    },
+  );
+}
+
 }

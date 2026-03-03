@@ -33,6 +33,8 @@ dependencies:
   record: ^6.2.0
   just_audio: ^0.10.5
   connectivity_plus: ^6.0.3
+  firebase_core: ^2.25.0
+  firebase_messaging: ^14.7.0
   
   
 
