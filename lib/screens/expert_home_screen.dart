@@ -9,6 +9,9 @@ import 'package:path_provider/path_provider.dart';
 import 'package:http/http.dart' as http;
 import 'local_db.dart';
 
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
+
 class ExpertHomeScreen extends StatefulWidget {
   final int expertId;
 
