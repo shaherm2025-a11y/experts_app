@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../services/api_service.dart';
 import 'expert_home_screen.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 
 class LoginScreen extends StatefulWidget {
@@ -31,7 +32,8 @@ class _LoginScreenState extends State<LoginScreen> {
     setState(() => _loading = false);
 if (res['status'] == 'success') {
   final expertId = res['expert_id'];
-  
+  final prefs = await SharedPreferences.getInstance();
+  await prefs.setInt('expert_id', expertId);
   // 🔔 طلب إذن الإشعارات (مهم لأندرويد 13)
     await FirebaseMessaging.instance.requestPermission();
 
