@@ -37,7 +37,8 @@ class _ExpertHomeScreenState extends State<ExpertHomeScreen> {
     super.initState();
     _loadQuestions();
     syncUnsyncedAnswers();
-	await FirebaseMessaging.instance.requestPermission();
+	//await FirebaseMessaging.instance.requestPermission();
+	 initFirebase();
 
     _timer = Timer.periodic(const Duration(minutes: 5), (_) {
       if (!mounted) return;
@@ -45,6 +46,10 @@ class _ExpertHomeScreenState extends State<ExpertHomeScreen> {
       syncUnsyncedAnswers();
     });
   }
+  
+  Future<void> initFirebase() async {
+  await FirebaseMessaging.instance.requestPermission();
+ }
 
   @override
   void dispose() {
