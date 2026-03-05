@@ -155,7 +155,7 @@ static Future<void> saveFcmToken({
     body: {
       "user_id": userId.toString(),
       "role": role,
-      "token": token,
+      "fcm_token": token,
     },
   );
 }
