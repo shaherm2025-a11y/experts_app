@@ -4,6 +4,10 @@ import 'screens/admin_dashboard.dart';
 import 'screens/expert_home_screen.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+
+final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
+    FlutterLocalNotificationsPlugin();
 
 final GlobalKey<NavigatorState> navigatorKey =
     GlobalKey<NavigatorState>();
@@ -17,6 +21,28 @@ Future<void> _firebaseBackgroundHandler(RemoteMessage message) async {
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp();
+  const AndroidInitializationSettings initializationSettingsAndroid =
+  AndroidInitializationSettings('@mipmap/ic_launcher');
+
+  const InitializationSettings initializationSettings =
+  InitializationSettings(android: initializationSettingsAndroid);
+
+  await flutterLocalNotificationsPlugin.initialize(
+  initializationSettings,
+  onDidReceiveNotificationResponse: (NotificationResponse response) {
+    navigatorKey.currentState?.pushNamed('/login');
+  },
+);
+  const AndroidNotificationChannel channel = AndroidNotificationChannel(
+  'high_importance_channel',
+  'High Importance Notifications',
+  importance: Importance.high,
+  );
+
+   await flutterLocalNotificationsPlugin
+    .resolvePlatformSpecificImplementation<
+        AndroidFlutterLocalNotificationsPlugin>()
+    ?.createNotificationChannel(channel);
 
   FirebaseMessaging.onBackgroundMessage(
       _firebaseBackgroundHandler);
@@ -45,19 +71,27 @@ class _ExpertsAppState extends State<ExpertsApp> {
     // طلب الإذن (مهم لأندرويد 13+)
     await FirebaseMessaging.instance.requestPermission();
 
-    // ================= FOREGROUND =================
     FirebaseMessaging.onMessage.listen((RemoteMessage message) {
-      if (message.notification != null) {
-        ScaffoldMessenger.of(
-                navigatorKey.currentContext!)
-            .showSnackBar(
-          SnackBar(
-            content: Text(
-                message.notification!.title ?? "إشعار جديد"),
-          ),
-        );
-      }
-    });
+
+  if (message.notification != null) {
+
+    flutterLocalNotificationsPlugin.show(
+      0,
+      message.notification!.title,
+      message.notification!.body,
+      const NotificationDetails(
+        android: AndroidNotificationDetails(
+          'high_importance_channel',
+          'High Importance Notifications',
+          importance: Importance.max,
+          priority: Priority.high,
+        ),
+      ),
+    );
+
+  }
+
+});
 
     // ================= عند الضغط على الإشعار =================
     FirebaseMessaging.onMessageOpenedApp
@@ -75,22 +109,22 @@ class _ExpertsAppState extends State<ExpertsApp> {
     }
   }
 
-  void _handleNotificationNavigation(RemoteMessage message) {
+  void _handleNotificationNavigation(RemoteMessage message) async {
 
-    final data = message.data;
+  final data = message.data;
 
-    if (data['type'] == 'new_question') {
+  if (data['type'] == 'new_question') {
 
-      final expertId =
-          int.tryParse(data['expert_id'] ?? "0") ?? 0;
+    final prefs = await SharedPreferences.getInstance();
+    final expertId = prefs.getInt('expert_id');
 
-      navigatorKey.currentState?.pushNamed(
-        '/expert',
-        arguments: expertId,
-      );
+    if (expertId != null) {
+      navigatorKey.currentState?.pushNamed('/expert', arguments: expertId);
+    } else {
+      navigatorKey.currentState?.pushNamed('/login');
     }
   }
-
+}
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
