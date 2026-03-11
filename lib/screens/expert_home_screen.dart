@@ -406,72 +406,63 @@ Future<void> _showAnswerDialog(Map<String, dynamic> q) async {
                 onPressed: () => Navigator.pop(context),
               ),
 
-              ElevatedButton(
-                child: const Text('إرسال'),
-                onPressed: () async {
-                  final answerText =
-                      answerController.text.trim();
+             ElevatedButton(
+               child: const Text('إرسال'),
+               onPressed: () async {
+                final answerText = answerController.text.trim();
+                final hasAudio = audioAnswerFile != null;
 
-                  if (answerText.isEmpty) {
-                    ScaffoldMessenger.of(context)
-                        .showSnackBar(
-                      const SnackBar(
-                          content:
-                              Text('يرجى كتابة الرد')),
-                    );
-                    return;
-                  }
+                // ✅ السماح بالإرسال إذا كان هناك نص أو صوت
+                if (answerText.isEmpty && !hasAudio) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('يرجى كتابة الرد أو تسجيل الصوت')),
+                 );
+                  return;
+                }
 
-                  try {
-                    final audioPath =
-                        audioAnswerFile?.path;
+                try {
+                 final audioPath = audioAnswerFile?.path;
 
-                    await LocalDB.updateAnswer(
-                      q['id'],
-                      answerText,
-                      audioPath,
-                      widget.expertId,
-                      isSynced: 0,
-                    );
+                 await LocalDB.updateAnswer(
+                 q['id'],
+                 answerText,
+                 audioPath,
+                 widget.expertId,
+                 isSynced: 0,
+                 );
 
-                    final success =
-                        await ApiService.answerQuestion(
-                      q['id'],
-                      answerText,
-                      widget.expertId,
-                      audioFile: audioAnswerFile,
-                    );
+                final success = await ApiService.answerQuestion(
+                q['id'],
+                answerText,
+                widget.expertId,
+                audioFile: audioAnswerFile,
+                 );
 
-                    if (success) {
-                      await LocalDB.updateAnswer(
-                        q['id'],
-                        answerText,
-                        audioPath,
-                        widget.expertId,
-                        isSynced: 1,
-                      );
+                if (success) {
+                 await LocalDB.updateAnswer(
+                  q['id'],
+                  answerText,
+                  audioPath,
+                  widget.expertId,
+                  isSynced: 1,
+                  );
 
-                      ScaffoldMessenger.of(context)
-                          .showSnackBar(
-                        const SnackBar(
-                            content:
-                                Text('تم إرسال الرد بنجاح')),
-                      );
-                    } else {
-                      ScaffoldMessenger.of(context)
-                          .showSnackBar(
-                        const SnackBar(
-                          content: Text(
-                              'تم حفظ الرد وسيتم إرساله لاحقاً'),
-                        ),
-                      );
-                    }
-                  } catch (_) {}
+                 ScaffoldMessenger.of(context).showSnackBar(
+                 const SnackBar(content: Text('تم إرسال الرد بنجاح')),
+                  );
+                } else {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                  content: Text('تم حفظ الرد وسيتم إرساله لاحقاً'),
+                  ),
+                 );
+                 }
+                } catch (_) {}
 
-                  Navigator.pop(context);
-                  _loadQuestions();
-                },
-              ),
+               Navigator.pop(context);
+               _loadQuestions();
+              },
+             ),
             ],
           );
         });
