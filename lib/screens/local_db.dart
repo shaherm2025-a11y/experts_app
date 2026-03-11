@@ -46,7 +46,7 @@ class LocalDB {
       diagnosis_date TEXT,
       created_at TEXT,
 	  expert_id INTEGER,
-	    is_synced INTEGER DEFAULT 1
+	  is_synced INTEGER DEFAULT 1
     )
   ''');
 }
