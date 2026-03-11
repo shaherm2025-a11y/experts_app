@@ -409,7 +409,10 @@ Future<void> _showAnswerDialog(Map<String, dynamic> q) async {
              ElevatedButton(
                child: const Text('إرسال'),
                onPressed: () async {
-                final answerText = answerController.text.trim();
+                final answerText = answerController.text.trim().isEmpty
+                  ? " "
+                  : answerController.text.trim();
+
                 final hasAudio = audioAnswerFile != null;
 
                 // ✅ السماح بالإرسال إذا كان هناك نص أو صوت
