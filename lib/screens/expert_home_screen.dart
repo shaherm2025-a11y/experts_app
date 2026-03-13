@@ -128,121 +128,146 @@ Future<String?> _downloadAndSaveFile(String url, String fileName) async {
 
 	  try {
 		// 2️⃣ ثانياً: جلب من السيرفر
-		final data =
-			await ApiService.getExpertDiagnoses(widget.expertId);
 
-		List<Map<String, dynamic>> serverUnanswered =
-			List<Map<String, dynamic>>.from(data['unanswered']);
+         final data =
+           await ApiService.getExpertDiagnoses(widget.expertId);
 
-		List<Map<String, dynamic>> serverAnswered =
-			List<Map<String, dynamic>>.from(data['answered']);
+         List<Map<String, dynamic>> serverUnanswered =
+         List<Map<String, dynamic>>.from(data['unanswered']);
 
-		// 3️⃣ حفظ في SQLite + تحميل الملفات
-		for (var q in [...serverUnanswered, ...serverAnswered]) {
+         List<Map<String, dynamic>> serverAnswered =
+         List<Map<String, dynamic>>.from(data['answered']);
 
-		  await LocalDB.insertOrUpdateQuestion({
-          "id": q["id"],
-          "question": q["question"],
-          "answer": q["answer"],
-          "expert_name": q["expert_name"],
-          "status": q["status"],
-          "question_date": q["question_date"],
-          "diagnosis_date": q["diagnosis_date"],
+          // 3️⃣ حفظ البيانات + تحميل الملفات
+        for (var q in [...serverUnanswered, ...serverAnswered]) {
+
+          await LocalDB.insertOrUpdateQuestion({
+           "id": q["id"],
+           "question": q["question"],
+           "answer": q["answer"],
+           "expert_name": q["expert_name"],
+           "status": q["status"],
+           "question_date": q["question_date"],
+           "diagnosis_date": q["diagnosis_date"],
+
+           "has_image": q["has_image"],
+           "question_has_audio": q["question_has_audio"],
+           "answer_has_audio": q["answer_has_audio"],
           });
 
-		  // تحميل الصورة
-       try {
+         // ===== تحميل صورة السؤال =====
+        if (q["has_image"] == 1) {
 
-        final dir = await getApplicationDocumentsDirectory();
-        final filePath = '${dir.path}/q_${q['id']}.jpg';
-        final file = File(filePath);
+         try {
 
-        // 📥 حمّل فقط إذا غير موجودة محلياً
-        if (!file.existsSync()) {
+           final dir =
+             await getApplicationDocumentsDirectory();
 
-          final imagePath = await _downloadAndSaveFile(
-          "${ApiService.baseUrl}/expert_question_image/${q['id']}",
-          "q_${q['id']}.jpg",
-        );
+           final filePath = '${dir.path}/q_${q['id']}.jpg';
+           final file = File(filePath);
 
-        // 📌 حدث قاعدة البيانات فقط إذا تم التحميل فعلاً
-        if (imagePath != null && imagePath.isNotEmpty) {
-         await LocalDB.updateQuestionImagePath(q['id'], imagePath);
+           if (!file.existsSync()) {
+
+           final imagePath = await _downloadAndSaveFile(
+             "${ApiService.baseUrl}/expert_question_image/${q['id']}",
+             "q_${q['id']}.jpg",
+            );
+
+           if (imagePath != null &&
+             imagePath.isNotEmpty) {
+
+             await LocalDB.updateQuestionImagePath(
+               q['id'], imagePath);
+             }
+            }
+
+           } catch (_) {
+           debugPrint("No image for question ${q['id']}");
+           }
+          }
+
+         // ===== تحميل صوت السؤال =====
+        if (q["question_has_audio"] == 1) {
+
+          try {
+
+         final dir =
+           await getApplicationDocumentsDirectory();
+
+         final filePath = '${dir.path}/q_${q['id']}.m4a';
+         final file = File(filePath);
+
+         if (!file.existsSync()) {
+
+           final audioPath = await _downloadAndSaveFile(
+           "${ApiService.baseUrl}/expert_question_audio/${q['id']}",
+           "q_${q['id']}.m4a",
+          );
+
+          if (audioPath != null &&
+            audioPath.isNotEmpty) {
+
+             await LocalDB.updateQuestionAudioPath(
+               q['id'], audioPath);
         }
-
       }
 
-      } catch (e) {
-      // تجاهل الخطأ إذا لم تكن هناك صورة
-      debugPrint("No image for question ${q['id']}");
-       }
-// تحميل صوت السؤال
-try {
+       } catch (_) {
+        debugPrint(
+          "No question audio for id ${q['id']}");
+      }
+   }
 
-  final dir = await getApplicationDocumentsDirectory();
-  final filePath = '${dir.path}/q_${q['id']}.mp3';
-  final file = File(filePath);
+  // ===== تحميل صوت الإجابة =====
+  if (q["answer_has_audio"] == 1) {
 
-  // حمّل فقط إذا غير موجود محلياً
-  if (!file.existsSync()) {
+    try {
 
-    final audioPath = await _downloadAndSaveFile(
-      "${ApiService.baseUrl}/expert_question_audio/${q['id']}",
-      "q_${q['id']}.mp3",
-    );
+      final dir =
+          await getApplicationDocumentsDirectory();
 
-    // حدث قاعدة البيانات فقط إذا تم التحميل فعلاً
-    if (audioPath != null && audioPath.isNotEmpty) {
-      await LocalDB.updateQuestionAudioPath(q['id'], audioPath);
-    }
+      final filePath = '${dir.path}/a_${q['id']}.m4a';
+      final file = File(filePath);
 
-  }
+      if (!file.existsSync()) {
 
-} catch (e) {
-  debugPrint("No question audio for id ${q['id']}");
-}
-
-		 // تحميل صوت الرد إن وجد
-if (q["status"] == 1) {
-  try {
-
-    final dir = await getApplicationDocumentsDirectory();
-    final filePath = '${dir.path}/a_${q['id']}.mp3';
-    final file = File(filePath);
-
-    // حمّل فقط إذا غير موجود محلياً
-    if (!file.existsSync()) {
-
-      final answerAudioPath = await _downloadAndSaveFile(
-        "${ApiService.baseUrl}/expert_answer_audio/${q['id']}",
-        "a_${q['id']}.mp3",
-      );
-
-      // حدّث قاعدة البيانات فقط إذا تم التحميل فعلاً
-      if (answerAudioPath != null && answerAudioPath.isNotEmpty) {
-        await LocalDB.updateAnswerAudioPath(
-          q['id'],
-          answerAudioPath,
+        final answerAudioPath =
+            await _downloadAndSaveFile(
+          "${ApiService.baseUrl}/expert_answer_audio/${q['id']}",
+          "a_${q['id']}.m4a",
         );
+
+        if (answerAudioPath != null &&
+            answerAudioPath.isNotEmpty) {
+
+          await LocalDB.updateAnswerAudioPath(
+              q['id'], answerAudioPath);
+        }
       }
 
+    } catch (_) {
+      debugPrint(
+          "No answer audio for id ${q['id']}");
     }
-
-  } catch (e) {
-    debugPrint("No answer audio for id ${q['id']}");
   }
+
 }
-		}
 
-		// 4️⃣ إعادة قراءة SQLite بعد التحديث
-		final updatedUnanswered = await LocalDB.getUnanswered();
-		final updatedAnswered = await LocalDB.getAnswered();
+// 4️⃣ إعادة قراءة SQLite بعد التحديث
+final updatedUnanswered =
+    await LocalDB.getUnanswered();
 
-		setState(() {
-		  unanswered = updatedUnanswered;
-		  answered = updatedAnswered;
-		  loading = false;
-		});
+final updatedAnswered =
+    await LocalDB.getAnswered();
+
+setState(() {
+
+  unanswered = updatedUnanswered;
+  answered = updatedAnswered;
+
+  loading = false;
+
+});
 
 	  } catch (e) {
 		// إذا فشل السيرفر — نعتمد على المحلي فقط

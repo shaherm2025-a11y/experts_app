@@ -46,6 +46,9 @@ class LocalDB {
       diagnosis_date TEXT,
       created_at TEXT,
 	  expert_id INTEGER,
+	  has_image INTEGER,
+	  question_has_audio INTEGER,
+	  answer_has_audio INTEGER,
 	  is_synced INTEGER DEFAULT 1
     )
   ''');
