@@ -156,7 +156,7 @@ Future<String?> _downloadAndSaveFile(String url, String fileName) async {
           });
 
          // ===== تحميل صورة السؤال =====
-        if (q["has_image"] == 1) {
+        if (q["has_image"] == 1 || q["has_image"] == true) {
 
          try {
 
@@ -187,7 +187,7 @@ Future<String?> _downloadAndSaveFile(String url, String fileName) async {
           }
 
          // ===== تحميل صوت السؤال =====
-        if (q["question_has_audio"] == 1) {
+        if (q["question_has_audio"] == true || q["question_has_audio"] == 1) {
 
           try {
 
@@ -219,7 +219,7 @@ Future<String?> _downloadAndSaveFile(String url, String fileName) async {
    }
 
   // ===== تحميل صوت الإجابة =====
-  if (q["answer_has_audio"] == 1) {
+  if (q["answer_has_audio"] == true || q["answer_has_audio"] == 1) {
 
     try {
 
