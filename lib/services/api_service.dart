@@ -71,7 +71,7 @@ class ApiService {
     int questionId,
     String answerText,
     int expertId,      // 👈 أضف هذا
-    {File? audioFile,}
+    {File? audioFile,File? imageFile,}
      ) async {
      try {
       var uri = Uri.parse("$baseUrl/answer_question/$questionId");
@@ -95,6 +95,12 @@ class ApiService {
       var response = await request.send();
 
       print("STATUS: ${response.statusCode}");
+	  
+	  if (imageFile != null) {
+        request.files.add(
+        await http.MultipartFile.fromPath('image', imageFile.path),
+       );
+      }
 
       return response.statusCode == 200;
      } catch (e) {
