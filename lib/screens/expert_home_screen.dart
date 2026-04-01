@@ -715,6 +715,7 @@ Widget _buildQuestionCard(Map<String, dynamic> q, {bool answeredCard = false}) {
               // ✍️ نص الإجابة
             Text(
                'الإجابة (${q['expert_name'] ?? 'مجهول'}): ${q['answer'] ?? "لا توجد"}',
+			   ),
 
               const SizedBox(height: 4),
 
