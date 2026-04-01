@@ -66,65 +66,58 @@ class ApiService {
     }
   }
 
-  // إرسال إجابة من الخبير
   static Future<bool> answerQuestion(
-    int questionId,
-    String answerText,
-    int expertId,      // 👈 أضف هذا
-    {File? audioFile,File? imageFile,}
-     ) async {
-     try {
-      var uri = Uri.parse("$baseUrl/answer_question/$questionId");
+  int questionId,
+  String answerText,
+  int expertId,
+  {File? audioFile, File? imageFile}
+) async {
+  try {
+    var uri = Uri.parse("$baseUrl/answer_question/$questionId");
 
-      var request = http.MultipartRequest('PUT', uri);
+    var request = http.MultipartRequest('PUT', uri);
 
     // 🔹 الحقول النصية
-      request.fields['answer'] = answerText;
-      request.fields['expert_id'] = expertId.toString();
+    request.fields['answer'] = answerText;
+    request.fields['expert_id'] = expertId.toString();
 
-    // 🔹 ملف الصوت (اختياري)
-      if (audioFile != null && await audioFile.exists()) {
-        request.files.add(
+    // 🎤 الصوت
+    if (audioFile != null && await audioFile.exists()) {
+      request.files.add(
         await http.MultipartFile.fromPath(
-          'answer_audio',   // 👈 الاسم الصحيح
+          'answer_audio',
           audioFile.path,
         ),
-        );
-     }
-
-      var response = await request.send();
-
-      print("STATUS: ${response.statusCode}");
-	  
-	  if (imageFile != null) {
-        request.files.add(
-        await http.MultipartFile.fromPath('answer_image', imageFile.path),
-       );
-      }
-
-      return response.statusCode == 200;
-     } catch (e) {
-      print("Exception sending answer: $e");
-      return false;
+      );
     }
-   }
 
-  // جلب الأسئلة غير المجابة
-  static Future<List<Map<String, dynamic>>> getQuestions() async {
-    try {
-      final response = await http.get(Uri.parse("$baseUrl/expert_diagnoses"));
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body) as List;
-        return data.map((q) => q as Map<String, dynamic>).toList();
-      } else {
-        return [];
-      }
-    } catch (e) {
-      print("Error fetching questions: $e");
-      return [];
+    // 🖼️ الصورة (🔥 قبل الإرسال)
+    if (imageFile != null && await imageFile.exists()) {
+
+      print("Sending image: ${imageFile.path}");
+
+      request.files.add(
+        await http.MultipartFile.fromPath(
+          'answer_image', // ✅ الاسم الصحيح
+          imageFile.path,
+        ),
+      );
+    } else {
+      print("No image selected");
     }
+
+    // 🚀 الإرسال بعد إضافة كل شيء
+    var response = await request.send();
+
+    print("STATUS: ${response.statusCode}");
+
+    return response.statusCode == 200;
+
+  } catch (e) {
+    print("Exception sending answer: $e");
+    return false;
   }
-
+}
 // تعديل بيانات خبير (للخبير أو للمدير)
   static Future<bool> updateExpert({
   required int expertId,
