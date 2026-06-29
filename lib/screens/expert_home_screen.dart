@@ -612,6 +612,32 @@ void deleteImage() {
 		),
 	  );
 	}
+	void _showNetworkImage(String imageUrl) {
+  showDialog(
+    context: context,
+    builder: (_) => Dialog(
+      backgroundColor: Colors.transparent,
+      child: InteractiveViewer(
+        panEnabled: true,
+        minScale: 0.5,
+        maxScale: 5.0,
+        child: Image.network(
+          imageUrl,
+          fit: BoxFit.contain,
+          errorBuilder: (_, __, ___) {
+            return const Center(
+              child: Icon(
+                Icons.image_not_supported,
+                size: 80,
+                color: Colors.white,
+              ),
+            );
+          },
+        ),
+      ),
+    ),
+  );
+}
 Widget _buildQuestionCard(Map<String, dynamic> q, {bool answeredCard = false}) {
   Widget? quoteWidget;
 
