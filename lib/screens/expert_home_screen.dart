@@ -162,6 +162,7 @@ Future<void> syncUnsyncedAnswers() async {
            "id": q["id"],
            "question": q["question"],
            "answer": q["answer"],
+		   "parent_question_id": q["parent_question_id"],
            "expert_name": q["expert_name"],
            "status": q["status"],
            "question_date": q["question_date"],
@@ -612,6 +613,98 @@ void deleteImage() {
 	  );
 	}
 Widget _buildQuestionCard(Map<String, dynamic> q, {bool answeredCard = false}) {
+  Widget? quoteWidget;
+
+if (q["parent_question_id"] != null) {
+
+  quoteWidget = Container(
+    width: double.infinity,
+    margin: const EdgeInsets.only(bottom: 8),
+    padding: const EdgeInsets.all(10),
+    decoration: BoxDecoration(
+      color: Colors.green.shade50,
+      borderRadius: BorderRadius.circular(8),
+      border: Border.all(
+        color: Colors.green.shade200,
+      ),
+    ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+
+        const Row(
+          children: [
+            Icon(Icons.reply, size: 16),
+            SizedBox(width: 4),
+            Text(
+              "متابعة لاستفسار سابق",
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ],
+        ),
+
+        const SizedBox(height: 6),
+
+        if ((q["parent_answer"] ?? "").toString().isNotEmpty)
+          Text(
+            q["parent_answer"],
+            maxLines: 3,
+            overflow: TextOverflow.ellipsis,
+          ),
+
+        const SizedBox(height: 8),
+
+        Row(
+          children: [
+
+            if (q["parent_has_image"] == true)
+              GestureDetector(
+                onTap: () {
+                  _showNetworkImage(
+                    "${ApiService.baseUrl}/expert_answer_image/${q["parent_question_id"]}",
+                  );
+                },
+                child: Container(
+                  width: 70,
+                  height: 70,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(8),
+                    image: DecorationImage(
+                      image: NetworkImage(
+                        "${ApiService.baseUrl}/expert_answer_image/${q["parent_question_id"]}",
+                      ),
+                      fit: BoxFit.cover,
+                    ),
+                  ),
+                ),
+              ),
+
+            if (q["parent_has_audio"] == true)
+              IconButton(
+                icon: const Icon(
+                  Icons.play_circle_fill,
+                  color: Colors.green,
+                  size: 34,
+                ),
+                onPressed: () async {
+
+                  await player.stop();
+
+                  await player.play(
+                    UrlSource(
+                      "${ApiService.baseUrl}/expert_answer_audio/${q["parent_question_id"]}",
+                    ),
+                  );
+                },
+              ),
+          ],
+        ),
+      ],
+    ),
+  );
+}
   return Card(
     margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
     elevation: 4,
@@ -622,10 +715,23 @@ Widget _buildQuestionCard(Map<String, dynamic> q, {bool answeredCard = false}) {
       // =============================
       // عنوان السؤال
       // =============================
-      title: Text(
-        q['question'],
-        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-      ),
+	  
+      title: Column(
+       crossAxisAlignment: CrossAxisAlignment.start,
+       children: [
+
+       if (quoteWidget != null)
+         quoteWidget,
+
+         Text(
+          q['question'],
+          style: const TextStyle(
+          fontWeight: FontWeight.bold,
+          fontSize: 16,
+          ),
+        ),
+      ],
+     ),
 
       // =============================
       // المحتوى السفلي
