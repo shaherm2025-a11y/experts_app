@@ -33,18 +33,6 @@ class LocalDB {
       "ALTER TABLE questions ADD COLUMN parent_question_id INTEGER"
     );
 
-    await db.execute(
-      "ALTER TABLE questions ADD COLUMN parent_answer TEXT"
-    );
-
-    await db.execute(
-      "ALTER TABLE questions ADD COLUMN parent_has_audio INTEGER DEFAULT 0"
-    );
-
-    await db.execute(
-      "ALTER TABLE questions ADD COLUMN parent_has_image INTEGER DEFAULT 0"
-    );
-
   
   }
 }
@@ -61,9 +49,6 @@ class LocalDB {
       question TEXT,
       answer TEXT,
 	  parent_question_id INTEGER,
-      parent_answer TEXT,
-      parent_has_audio INTEGER,
-      parent_has_image INTEGER,
       expert_name TEXT,
       image_path TEXT,
       question_audio_path TEXT,
@@ -104,10 +89,6 @@ static Future<void> insertOrUpdateQuestion(
         "question": data["question"],
         "answer": data["answer"],
 		"parent_question_id": data["parent_question_id"],
-		"parent_answer": data["parent_answer"],
-        "parent_has_audio": data["parent_has_audio"],
-        "parent_has_image": data["parent_has_image"],
-        "parent_id": data["parent_id"],
         "expert_name": data["expert_name"],
         "status": data["status"] ?? 0,
         "question_date": data["question_date"],
@@ -125,10 +106,6 @@ static Future<void> insertOrUpdateQuestion(
         "question": data["question"],
         "answer": data["answer"],
 		"parent_question_id": data["parent_question_id"],
-		"parent_answer": data["parent_answer"],
-        "parent_has_audio": data["parent_has_audio"],
-        "parent_has_image": data["parent_has_image"],
-        "parent_id": data["parent_id"],
         "expert_name": data["expert_name"],
         "status": data["status"] ?? 0,
         "question_date": data["question_date"],

@@ -642,6 +642,18 @@ Widget _buildQuestionCard(Map<String, dynamic> q, {bool answeredCard = false}) {
   Widget? quoteWidget;
 
 if (q["parent_question_id"] != null) {
+   final parentList = [
+    ...answered,
+    ...unanswered
+  ];
+
+  final parentItems = parentList.where(
+    (e) => e["id"] == q["parent_question_id"]
+  );
+
+  if (parentItems.isNotEmpty) {
+
+    final parent = parentItems.first;
 
   quoteWidget = Container(
     width: double.infinity,
@@ -673,19 +685,18 @@ if (q["parent_question_id"] != null) {
 
         const SizedBox(height: 6),
 
-        if ((q["parent_answer"] ?? "").toString().isNotEmpty)
+        if ((parent["answer"] ?? "").toString().isNotEmpty)
           Text(
-            q["parent_answer"],
-            maxLines: 3,
-            overflow: TextOverflow.ellipsis,
-          ),
-
+          parent["answer"],
+          maxLines: 3,
+         overflow: TextOverflow.ellipsis,
+         ),
         const SizedBox(height: 8),
 
         Row(
           children: [
 
-            if (q["parent_has_image"] == true)
+            if (parent["answer_image_path"] != null &&  File(parent["answer_image_path"]).existsSync())
               GestureDetector(
                 onTap: () {
                   _showNetworkImage(
@@ -698,16 +709,16 @@ if (q["parent_question_id"] != null) {
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(8),
                     image: DecorationImage(
-                      image: NetworkImage(
-                        "${ApiService.baseUrl}/expert_answer_image/${q["parent_question_id"]}",
-                      ),
+                      image: FileImage(
+                        File(parent["answer_image_path"]),
+                       ),
                       fit: BoxFit.cover,
                     ),
                   ),
                 ),
               ),
 
-            if (q["parent_has_audio"] == true)
+            if (parent["answer_audio_path"] != null && File(parent["answer_audio_path"]).existsSync())
               IconButton(
                 icon: const Icon(
                   Icons.play_circle_fill,
@@ -719,8 +730,8 @@ if (q["parent_question_id"] != null) {
                   await player.stop();
 
                   await player.play(
-                    UrlSource(
-                      "${ApiService.baseUrl}/expert_answer_audio/${q["parent_question_id"]}",
+                   DeviceFileSource(
+                     parent["answer_audio_path"],
                     ),
                   );
                 },
