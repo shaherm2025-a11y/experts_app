@@ -699,9 +699,9 @@ if (q["parent_question_id"] != null) {
             if (parent["answer_image_path"] != null &&  File(parent["answer_image_path"]).existsSync())
               GestureDetector(
                 onTap: () {
-                  _showNetworkImage(
-                    "${ApiService.baseUrl}/expert_answer_image/${q["parent_question_id"]}",
-                  );
+                  _showFullImage(
+                     parent["answer_image_path"],
+                    );
                 },
                 child: Container(
                   width: 70,
@@ -741,6 +741,7 @@ if (q["parent_question_id"] != null) {
       ],
     ),
   );
+  }
 }
   return Card(
     margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
@@ -990,4 +991,4 @@ if (q["parent_question_id"] != null) {
 		);
 	  }
 	}
-	}
+	
