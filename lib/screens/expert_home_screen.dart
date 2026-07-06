@@ -37,6 +37,10 @@ class _ExpertHomeScreenState extends State<ExpertHomeScreen> {
   @override
   void initState() {
     super.initState();
+	_tabController = TabController(
+      length: 2,
+      vsync: this,
+    );
     _loadQuestions();
     syncUnsyncedAnswers();
 	//await FirebaseMessaging.instance.requestPermission();
@@ -58,6 +62,8 @@ class _ExpertHomeScreenState extends State<ExpertHomeScreen> {
     _timer?.cancel();
     player.dispose();
     record.dispose();
+    _tabController.dispose();
+
     super.dispose();
   }
 	  
@@ -316,6 +322,19 @@ setState(() {
 		setState(() => loading = false);
 	  }
 	}
+	
+Future<void> _openQuotedQuestion(
+    int parentQuestionId) async {
+
+  // الانتقال لتبويب المجابة
+  _tabController.animateTo(1);
+
+  await Future.delayed(
+    const Duration(milliseconds: 300),
+  );
+
+  _jumpToQuestion(parentQuestionId);
+}
 	
 Future<void> _showAnswerDialog(Map<String, dynamic> q) async {
     TextEditingController answerController =
@@ -915,80 +934,114 @@ if (q["parent_question_id"] != null) {
     ),
   );
 }
-	  @override
-	  Widget build(BuildContext context) {
-		if (loading) {
-		  return const Scaffold(
-			body: Center(child: CircularProgressIndicator()),
-		  );
-		}
+	@override
+Widget build(BuildContext context) {
 
-		return DefaultTabController(
-		  length: 2,
-		  child: Scaffold(
-			backgroundColor: Colors.grey[100],
-			appBar: AppBar(
-	  backgroundColor: Colors.green[700],
-	  title: const Text(
-		'الاستفسارات من المزارعين',
-		style: TextStyle(fontSize: 20),
-	  ),
-	  actions: [
-		IconButton(
-		  icon: const Icon(Icons.settings),
-		  tooltip: 'تعديل معلومات الحساب',
-		  onPressed: () {
-			Navigator.push(
-			  context,
-			  MaterialPageRoute(
-				builder: (_) => EditProfileScreen(
-				  expertId: widget.expertId,
-				  isAdmin: false, // الخبير العادي
-				),
-			  ),
-			);
-		  },
-		),
-	  ],
-	  bottom: const TabBar(
-		indicatorColor: Colors.white,
-		indicatorWeight: 4,
-		tabs: [
-		  Tab(text: 'لم يتم الرد عليها'),
-		  Tab(text: 'تم الرد عليها'),
-		],
-	  ),
-	),
+  if (loading) {
+    return const Scaffold(
+      body: Center(
+        child: CircularProgressIndicator(),
+      ),
+    );
+  }
 
-			body: TabBarView(
-			  children: [
-				// الأسئلة غير المجابة
-				RefreshIndicator(
-				  onRefresh: _loadQuestions,
-				  child: ListView.builder(
-					padding: const EdgeInsets.only(top: 8),
-					itemCount: unanswered.length,
-					itemBuilder: (context, index) {
-					  return _buildQuestionCard(unanswered[index]);
-					},
-				  ),
-				),
+  return Scaffold(
+    backgroundColor: Colors.grey[100],
 
-				// الأسئلة المجابة
-				RefreshIndicator(
-				  onRefresh: _loadQuestions,
-				  child: ListView.builder(
-					padding: const EdgeInsets.only(top: 8),
-					itemCount: answered.length,
-					itemBuilder: (context, index) {
-					  return _buildQuestionCard(answered[index], answeredCard: true);
-					},
-				  ),
-				),
-			  ],
-			),
-		  ),
-		);
-	  }
-	}
-	
+    appBar: AppBar(
+      backgroundColor: Colors.green[700],
+
+      title: const Text(
+        'الاستفسارات من المزارعين',
+        style: TextStyle(fontSize: 20),
+      ),
+
+      actions: [
+
+        IconButton(
+          icon: const Icon(Icons.settings),
+          tooltip: 'تعديل معلومات الحساب',
+          onPressed: () {
+
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => EditProfileScreen(
+                  expertId: widget.expertId,
+                  isAdmin: false,
+                ),
+              ),
+            );
+
+          },
+        ),
+
+      ],
+
+      bottom: TabBar(
+        controller: _tabController,
+        indicatorColor: Colors.white,
+        indicatorWeight: 4,
+        tabs: const [
+
+          Tab(
+            text: 'لم يتم الرد عليها',
+          ),
+
+          Tab(
+            text: 'تم الرد عليها',
+          ),
+
+        ],
+      ),
+    ),
+
+    body: TabBarView(
+      controller: _tabController,
+
+      children: [
+
+        // غير المجابة
+        RefreshIndicator(
+          onRefresh: _loadQuestions,
+
+          child: ListView.builder(
+            padding: const EdgeInsets.only(top: 8),
+
+            itemCount: unanswered.length,
+
+            itemBuilder: (context, index) {
+
+              return _buildQuestionCard(
+                unanswered[index],
+              );
+
+            },
+          ),
+        ),
+
+        // المجابة
+        RefreshIndicator(
+          onRefresh: _loadQuestions,
+
+          child: ListView.builder(
+            padding: const EdgeInsets.only(top: 8),
+
+            itemCount: answered.length,
+
+            itemBuilder: (context, index) {
+
+              return _buildQuestionCard(
+                answered[index],
+                answeredCard: true,
+              );
+
+            },
+          ),
+        ),
+
+      ],
+    ),
+  );
+}
+}
