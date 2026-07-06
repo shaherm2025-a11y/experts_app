@@ -24,11 +24,14 @@ class ExpertHomeScreen extends StatefulWidget {
   State<ExpertHomeScreen> createState() => _ExpertHomeScreenState();
 }
 
-class _ExpertHomeScreenState extends State<ExpertHomeScreen> {
+class _ExpertHomeScreenState extends State<ExpertHomeScreen>
+    with SingleTickerProviderStateMixin {
   List<Map<String, dynamic>> unanswered = [];
   List<Map<String, dynamic>> answered = [];
   bool loading = true;
-
+  late TabController _tabController;
+  final ScrollController _answeredScrollController =
+    ScrollController();
   final AudioPlayer player = AudioPlayer();
   final AudioRecorder record = AudioRecorder();
   Timer? _timer;
@@ -322,16 +325,31 @@ setState(() {
 		setState(() => loading = false);
 	  }
 	}
-	
-Future<void> _openQuotedQuestion(
-    int parentQuestionId) async {
+void _jumpToQuestion(int parentQuestionId) {
 
-  // الانتقال لتبويب المجابة
+  final index = answered.indexWhere(
+    (q) => q["id"] == parentQuestionId,
+  );
+
+  if (index == -1) return;
+
   _tabController.animateTo(1);
 
-  await Future.delayed(
+  Future.delayed(
     const Duration(milliseconds: 300),
+    () {
+
+      _answeredScrollController.animateTo(
+        index * 220.0,
+        duration: const Duration(milliseconds: 600),
+        curve: Curves.easeInOut,
+      );
+
+    },
   );
+}	
+Future<void> _openQuotedQuestion(
+    int parentQuestionId) async {
 
   _jumpToQuestion(parentQuestionId);
 }
@@ -674,7 +692,13 @@ if (q["parent_question_id"] != null) {
 
     final parent = parentItems.first;
 
-  quoteWidget = Container(
+ quoteWidget = GestureDetector(
+  onTap: () {
+    _openQuotedQuestion(
+      q["parent_question_id"],
+    );
+  },
+  child: Container(
     width: double.infinity,
     margin: const EdgeInsets.only(bottom: 8),
     padding: const EdgeInsets.all(10),
@@ -758,8 +782,9 @@ if (q["parent_question_id"] != null) {
           ],
         ),
       ],
-    ),
-  );
+     ),
+    ),  
+   );
   }
 }
   return Card(
@@ -1025,6 +1050,7 @@ Widget build(BuildContext context) {
           onRefresh: _loadQuestions,
 
           child: ListView.builder(
+		    controller: _answeredScrollController,
             padding: const EdgeInsets.only(top: 8),
 
             itemCount: answered.length,
