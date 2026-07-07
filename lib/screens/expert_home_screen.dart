@@ -30,6 +30,7 @@ class _ExpertHomeScreenState extends State<ExpertHomeScreen>
   List<Map<String, dynamic>> answered = [];
   bool loading = true;
   late TabController _tabController;
+  final Map<int, GlobalKey> _questionKeys = {};
   final ScrollController _answeredScrollController =
     ScrollController();
   final AudioPlayer player = AudioPlayer();
@@ -327,27 +328,32 @@ setState(() {
 	}
 void _jumpToQuestion(int parentQuestionId) {
 
-  final index = answered.indexWhere(
-    (q) => q["id"] == parentQuestionId,
-  );
-
-  if (index == -1) return;
-
   _tabController.animateTo(1);
 
   Future.delayed(
-    const Duration(milliseconds: 300),
+    const Duration(milliseconds: 400),
     () {
 
-      _answeredScrollController.animateTo(
-        index * 220.0,
-        duration: const Duration(milliseconds: 600),
+      final key =
+          _questionKeys[parentQuestionId];
+
+      if (key == null) return;
+
+      final context =
+          key.currentContext;
+
+      if (context == null) return;
+
+      Scrollable.ensureVisible(
+        context,
+        duration:
+            const Duration(milliseconds: 600),
         curve: Curves.easeInOut,
       );
 
     },
   );
-}	
+}
 Future<void> _openQuotedQuestion(
     int parentQuestionId) async {
 
@@ -676,6 +682,12 @@ void deleteImage() {
   );
 }
 Widget _buildQuestionCard(Map<String, dynamic> q, {bool answeredCard = false}) {
+  final questionKey =
+     _questionKeys.putIfAbsent(
+      q["id"],
+      () => GlobalKey(),
+    );
+ 
   Widget? quoteWidget;
 
 if (q["parent_question_id"] != null) {
@@ -787,7 +799,9 @@ if (q["parent_question_id"] != null) {
    );
   }
 }
-  return Card(
+ return Container(
+  key: questionKey,
+  child: Card(
     margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
     elevation: 4,
     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -957,6 +971,7 @@ if (q["parent_question_id"] != null) {
             )
           : null,
     ),
+   ), 	
   );
 }
 	@override
