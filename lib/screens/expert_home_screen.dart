@@ -8,6 +8,7 @@ import 'dart:io';
 import 'package:path_provider/path_provider.dart';
 import 'package:http/http.dart' as http;
 import 'local_db.dart';
+import 'dart:convert';
 
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
@@ -110,16 +111,17 @@ Future<void> syncUnsyncedAnswers() async {
         ? File(q['answer_audio_path'])
         : null;
 
-    final imageFile = q['answer_image_path'] != null
-        ? File(q['answer_image_path'])
-        : null;
+
+    final imageFiles = (await LocalDB.getAnswerImages(q["id"]))
+      .map((path) => File(path))
+      .toList();
 
     final success = await ApiService.answerQuestion(
       q['id'],
       q['answer'] ?? "",
       q['expert_id'],   // ✅ رقم الخبير الصحيح لكل رد
       audioFile: audioFile,
-      imageFile: imageFile, // ✅ الجديد
+      imageFiles: imageFiles, // ✅ الجديد
     );
 
     if (success) {
@@ -131,13 +133,7 @@ Future<void> syncUnsyncedAnswers() async {
         isSynced: 1,
       );
 
-      // ✅ نحفظ مسار الصورة أيضاً (لو حاب تتأكد)
-      if (q['answer_image_path'] != null) {
-        await LocalDB.updateAnswerImagePath(
-          q['id'],
-          q['answer_image_path'],
-        );
-      }
+     
     }
   }
 }
@@ -181,7 +177,7 @@ Future<void> syncUnsyncedAnswers() async {
            "has_image": q["has_image"],
            "question_has_audio": q["question_has_audio"],
            "answer_has_audio": q["answer_has_audio"],
-		   "answer_has_image": q["answer_has_image"],
+		   "answer_image_count": q["answer_image_count"],
           });
 
          // ===== تحميل صورة السؤال =====
@@ -281,25 +277,41 @@ Future<void> syncUnsyncedAnswers() async {
   }
   
   // ===== تحميل صورة الإجابة =====
-if (q["answer_has_image"] == true || q["answer_has_image"] == 1) {
+if ((q["answer_image_count"] ?? 0) > 0) {
   try {
-    final dir = await getApplicationDocumentsDirectory();
+    final response = await http.get(
+      Uri.parse(
+        "${ApiService.baseUrl}/expert_answer_images/${q['id']}",
+      ),
+    );
 
-    final filePath = '${dir.path}/a_${q['id']}.jpg';
-    final file = File(filePath);
+    if (response.statusCode != 200) {
+      throw Exception("Failed to get answer images");
+    }
 
-    if (!file.existsSync()) {
+    final List images = jsonDecode(response.body);
+
+    await LocalDB.clearAnswerImages(q['id']);
+
+    for (final img in images) {
+      final imageId = img["id"];
+
       final imagePath = await _downloadAndSaveFile(
-        "${ApiService.baseUrl}/expert_answer_image/${q['id']}",
-        "a_${q['id']}.jpg",
+        "${ApiService.baseUrl}/expert_answer_image/$imageId",
+        "answer_${q['id']}_$imageId.jpg",
       );
 
-      if (imagePath != null && imagePath.isNotEmpty) {
-        await LocalDB.updateAnswerImagePath(q['id'], imagePath);
+      if (imagePath != null) {
+        await LocalDB.insertAnswerImage(
+          q['id'],
+          imagePath,
+        );
       }
     }
-  } catch (_) {
-    debugPrint("No answer image for id ${q['id']}");
+  } catch (e) {
+    debugPrint(
+      "No answer images for id ${q['id']}: $e",
+    );
   }
 }
 
@@ -368,24 +380,27 @@ Future<void> _showAnswerDialog(Map<String, dynamic> q) async {
     bool isPlaying = false;
     File? audioAnswerFile;
     Duration duration = Duration.zero;
-	File? imageAnswerFile;
+	List<File> answerImages = [];
     final ImagePicker picker = ImagePicker();
 	
-	Future<void> pickImage() async {
-  final picked = await picker.pickImage(source: ImageSource.gallery);
+Future<void> pickImage() async {
 
-  if (picked != null) {
+   final picked = await picker.pickMultiImage();
+
+   if (picked.isEmpty) return;
+
     setState(() {
-      imageAnswerFile = File(picked.path);
-    });
-  }
+
+    answerImages.clear();
+
+    answerImages.addAll(
+      picked.map((e) => File(e.path)),
+    );
+
+  });
+
 }
 
-void deleteImage() {
-  setState(() {
-    imageAnswerFile = null;
-  });
-}
 
     showDialog(
       context: context,
@@ -516,20 +531,52 @@ void deleteImage() {
            ],
           ),
            // عرض الصورة
-          if (imageAnswerFile != null)
-           Column(
+          // عرض الصور المختارة
+if (answerImages.isNotEmpty)
+  Column(
+    children: [
+      const SizedBox(height: 10),
+
+      Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        children: List.generate(
+          answerImages.length,
+          (index) => Stack(
             children: [
-             const SizedBox(height: 10),
-             Image.file(
-             imageAnswerFile!,
-             height: 120,
-            ),
-            IconButton(
-            icon: const Icon(Icons.delete, color: Colors.red),
-            onPressed: deleteImage,
-             ),
-           ],
-           ),
+
+              ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: Image.file(
+                  answerImages[index],
+                  width: 100,
+                  height: 100,
+                  fit: BoxFit.cover,
+                ),
+              ),
+
+              Positioned(
+                right: 0,
+                top: 0,
+                child: IconButton(
+                  icon: const Icon(
+                    Icons.close,
+                    color: Colors.red,
+                  ),
+                  onPressed: () {
+                    setState(() {
+                      answerImages.removeAt(index);
+                    });
+                  },
+                ),
+              ),
+
+            ],
+          ),
+        ),
+      ),
+    ],
+  ),
                 const SizedBox(height: 12),
 				
 
@@ -569,7 +616,7 @@ void deleteImage() {
                   : answerController.text.trim();
 
                 final hasAudio = audioAnswerFile != null;
-				final hasImage = imageAnswerFile != null;
+				final hasImage = answerImages.isNotEmpty;
 
                 // ✅ السماح بالإرسال إذا كان هناك نص أو صوت
                 if (answerText.isEmpty && !hasAudio && !hasImage) {
@@ -581,7 +628,6 @@ void deleteImage() {
 
                 try {
                  final audioPath = audioAnswerFile?.path;
-                 final imagePath = imageAnswerFile?.path;
 
                  await LocalDB.updateAnswer(
                  q['id'],
@@ -591,16 +637,22 @@ void deleteImage() {
                  isSynced: 0,
                  );
 				 
-				 if (imagePath != null) {
-                     await LocalDB.updateAnswerImagePath(q['id'], imagePath);
-                     }
+			   
+                await LocalDB.clearAnswerImages(q['id']);
 
+                for (final image in answerImages) {
+                 await LocalDB.insertAnswerImage(
+                 q['id'],
+                 image.path,
+                   );
+                } 
+				 
                 final success = await ApiService.answerQuestion(
                 q['id'],
                 answerText,
                 widget.expertId,
                 audioFile: audioAnswerFile,
-				imageFile: imageAnswerFile,
+				imageFiles: answerImages,
                  );
 
                 if (success) {
@@ -739,39 +791,49 @@ if (q["parent_question_id"] != null) {
         ),
 
         const SizedBox(height: 6),
+if ((parent["answer"] ?? "").toString().isNotEmpty)
+  Text(
+    parent["answer"],
+    maxLines: 3,
+    overflow: TextOverflow.ellipsis,
+  ),
 
-        if ((parent["answer"] ?? "").toString().isNotEmpty)
-          Text(
-          parent["answer"],
-          maxLines: 3,
-         overflow: TextOverflow.ellipsis,
-         ),
-        const SizedBox(height: 8),
+const SizedBox(height: 8),
 
-        Row(
-          children: [
+FutureBuilder<List<String>>(
+  future: LocalDB.getAnswerImages(parent["id"]),
+  builder: (context, snapshot) {
 
-            if (parent["answer_image_path"] != null &&  File(parent["answer_image_path"]).existsSync())
-              GestureDetector(
-                onTap: () {
-                  _showFullImage(
-                     parent["answer_image_path"],
-                    );
-                },
-                child: Container(
-                  width: 70,
-                  height: 70,
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(8),
-                    image: DecorationImage(
-                      image: FileImage(
-                        File(parent["answer_image_path"]),
-                       ),
-                      fit: BoxFit.cover,
-                    ),
-                  ),
-                ),
-              ),
+    if (!snapshot.hasData || snapshot.data!.isEmpty) {
+      return const SizedBox();
+    }
+
+    final images = snapshot.data!;
+
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: images.map((path) {
+
+  return GestureDetector(
+    onTap: () => _showFullImage(path),
+    child: Container(
+      width: 70,
+      height: 70,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(8),
+        image: DecorationImage(
+          image: FileImage(File(path)),
+          fit: BoxFit.cover,
+        ),
+      ),
+    ),
+  );
+
+}).toList(),
+    );
+  },
+),
 
             if (parent["answer_audio_path"] != null && File(parent["answer_audio_path"]).existsSync())
               IconButton(
@@ -793,8 +855,7 @@ if (q["parent_question_id"] != null) {
               ),
           ],
         ),
-      ],
-     ),
+    
     ),  
    );
   }
@@ -894,26 +955,47 @@ if (q["parent_question_id"] != null) {
            ],
           ),
 
-              const Divider(),
+             const Divider(),
 
-              // 🖼️ صورة الرد (هنا بالضبط)
-             if (q['answer_image_path'] != null &&
-             File(q['answer_image_path']).existsSync())
-             GestureDetector(
-             onTap: () => _showFullImage(q['answer_image_path']),
-             child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 8),
-               child: ClipRRect(
-                borderRadius: BorderRadius.circular(10),
-                 child: Image.file(
-                  File(q['answer_image_path']),
-                   height: 120,
-                   fit: BoxFit.cover,
-                 ),
-                ),
-               ),
-             ),
+FutureBuilder<List<String>>(
+  future: LocalDB.getAnswerImages(q['id']),
+  builder: (context, snapshot) {
 
+    if (!snapshot.hasData) {
+      return const SizedBox();
+    }
+
+    final images = snapshot.data!;
+
+    if (images.isEmpty) {
+      return const SizedBox();
+    }
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        children: images.map((path) {
+
+  return GestureDetector(
+    onTap: () => _showFullImage(path),
+    child: ClipRRect(
+      borderRadius: BorderRadius.circular(10),
+      child: Image.file(
+        File(path),
+        width: 120,
+        height: 120,
+        fit: BoxFit.cover,
+      ),
+    ),
+  );
+
+}).toList(),
+      ),
+    );
+  },
+),
               // ✍️ نص الإجابة
             Text(
                'الإجابة (${q['expert_name'] ?? 'مجهول'}): ${q['answer'] ?? "لا توجد"}',

@@ -23,17 +23,26 @@ class LocalDB {
 
     return await openDatabase(
       path,
-      version: 2,
+      version: 3,
       onCreate: _createDB,
-	 onUpgrade: (db, oldVersion, newVersion) async {
+	onUpgrade: (db, oldVersion, newVersion) async {
 
-  if (oldVersion < 2) {
+    if (oldVersion < 2) {
+      await db.execute(
+        "ALTER TABLE questions ADD COLUMN parent_question_id INTEGER"
+      );
+    }
 
-    await db.execute(
-      "ALTER TABLE questions ADD COLUMN parent_question_id INTEGER"
-    );
+  if (oldVersion < 3) {
 
-  
+    await db.execute('''
+      CREATE TABLE answer_images(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        question_id INTEGER,
+        image_path TEXT
+      )
+    ''');
+
   }
 }
     );
@@ -62,12 +71,64 @@ class LocalDB {
 	  question_has_audio INTEGER,
 	  answer_has_audio INTEGER,
 	  answer_has_image INTEGER,
-	  answer_image_path TEXT,
 	  is_synced INTEGER DEFAULT 1
     )
   ''');
+  await db.execute('''
+   CREATE TABLE answer_images(
+   id INTEGER PRIMARY KEY AUTOINCREMENT,
+   question_id INTEGER,
+   image_path TEXT
+  )
+  ''');
   
+  }
+static Future<void> insertAnswerImage(
+    int questionId,
+    String path,
+) async {
+
+  final db = await database;
+
+  await db.insert(
+    "answer_images",
+    {
+      "question_id": questionId,
+      "image_path": path,
+    },
+  );
 }
+
+static Future<List<String>> getAnswerImages(
+    int questionId,
+) async {
+
+  final db = await database;
+
+  final result = await db.query(
+    "answer_images",
+    where: "question_id=?",
+    whereArgs: [questionId],
+  );
+
+  return result
+      .map((e) => e["image_path"] as String)
+      .toList();
+}
+
+static Future<void> clearAnswerImages(
+    int questionId,
+) async {
+
+  final db = await database;
+
+  await db.delete(
+    "answer_images",
+    where: "question_id=?",
+    whereArgs: [questionId],
+  );
+}
+  
 static Future<void> insertOrUpdateQuestion(
     Map<String, dynamic> data) async {
 

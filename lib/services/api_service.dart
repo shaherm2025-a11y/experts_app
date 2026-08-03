@@ -4,8 +4,8 @@ import '../models/expert.dart';
 import 'dart:io';
 
 class ApiService {
-   static const String baseUrl = "https://mohashaher-backend-supaspace.hf.space";
-  //static const String baseUrl = "https://mohashaher-mobile-backend.hf.space";
+  // static const String baseUrl = "https://mohashaher-backend-supaspace.hf.space";
+  static const String baseUrl = "https://mohashaher-mobile-backend.hf.space";
   //static const String baseUrl = "https://mohashaher-plant-diag-final-server.hf.space";
  //static const String baseUrl = "http://localhost:8000";
 
@@ -66,22 +66,32 @@ class ApiService {
     }
   }
 
-  static Future<bool> answerQuestion(
+static Future<bool> answerQuestion(
   int questionId,
   String answerText,
-  int expertId,
-  {File? audioFile, File? imageFile}
-) async {
+  int expertId, {
+  File? audioFile,
+  List<File>? imageFiles,
+}) async {
   try {
-    var uri = Uri.parse("$baseUrl/answer_question/$questionId");
+    final uri = Uri.parse(
+      "$baseUrl/answer_question/$questionId",
+    );
 
-    var request = http.MultipartRequest('PUT', uri);
+    final request = http.MultipartRequest(
+      'PUT',
+      uri,
+    );
 
-    // 🔹 الحقول النصية
+    // =========================
+    // البيانات النصية
+    // =========================
     request.fields['answer'] = answerText;
     request.fields['expert_id'] = expertId.toString();
 
-    // 🎤 الصوت
+    // =========================
+    // الصوت
+    // =========================
     if (audioFile != null && await audioFile.exists()) {
       request.files.add(
         await http.MultipartFile.fromPath(
@@ -89,30 +99,41 @@ class ApiService {
           audioFile.path,
         ),
       );
+
+      print("Sending audio: ${audioFile.path}");
     }
 
-    // 🖼️ الصورة (🔥 قبل الإرسال)
-    if (imageFile != null && await imageFile.exists()) {
+    // =========================
+    // الصور المتعددة
+    // =========================
+    if (imageFiles != null && imageFiles.isNotEmpty) {
+      for (final imageFile in imageFiles) {
+        if (await imageFile.exists()) {
+          request.files.add(
+            await http.MultipartFile.fromPath(
+              'answer_images',
+              imageFile.path,
+            ),
+          );
 
-      print("Sending image: ${imageFile.path}");
-
-      request.files.add(
-        await http.MultipartFile.fromPath(
-          'answer_image', // ✅ الاسم الصحيح
-          imageFile.path,
-        ),
-      );
+          print("Sending answer image: ${imageFile.path}");
+        }
+      }
     } else {
-      print("No image selected");
+      print("No answer images selected");
     }
 
-    // 🚀 الإرسال بعد إضافة كل شيء
-    var response = await request.send();
+    // =========================
+    // إرسال الطلب
+    // =========================
+    final response = await request.send();
+
+    final responseBody = await response.stream.bytesToString();
 
     print("STATUS: ${response.statusCode}");
+    print("RESPONSE: $responseBody");
 
     return response.statusCode == 200;
-
   } catch (e) {
     print("Exception sending answer: $e");
     return false;
