@@ -277,44 +277,97 @@ Future<void> syncUnsyncedAnswers() async {
   }
   
   // ===== تحميل صورة الإجابة =====
-if ((q["answer_image_count"] ?? 0) > 0) {
+// ===== مزامنة صور الإجابة =====
+final serverImageCount =
+    int.tryParse(
+      "${q["answer_image_count"] ?? 0}",
+    ) ?? 0;
+
+if (serverImageCount > 0) {
   try {
-    final response = await http.get(
-      Uri.parse(
-        "${ApiService.baseUrl}/expert_answer_images/${q['id']}",
-      ),
+    // 1️⃣ نقرأ الصور الموجودة محليًا أولاً
+    final localImages =
+        await LocalDB.getAnswerImages(q["id"]);
+
+    // 2️⃣ نتحقق أن الملفات المحلية موجودة فعليًا
+    final validLocalImages = localImages
+        .where(
+          (path) => File(path).existsSync(),
+        )
+        .toList();
+
+    debugPrint(
+      "Answer images for ${q["id"]}: "
+      "local=${validLocalImages.length}, "
+      "server=$serverImageCount",
     );
 
-    if (response.statusCode != 200) {
-      throw Exception("Failed to get answer images");
-    }
+    // 3️⃣ إذا الصور المحلية كاملة، لا نذهب للسيرفر
+    if (validLocalImages.length == serverImageCount) {
 
-    final List images = jsonDecode(response.body);
-
-    await LocalDB.clearAnswerImages(q['id']);
-
-    for (final img in images) {
-      final imageId = img["id"];
-
-      final imagePath = await _downloadAndSaveFile(
-        "${ApiService.baseUrl}/expert_answer_image/$imageId",
-        "answer_${q['id']}_$imageId.jpg",
+      debugPrint(
+        "Using local answer images for "
+        "question ${q["id"]}",
       );
 
-      if (imagePath != null) {
-        await LocalDB.insertAnswerImage(
-          q['id'],
-          imagePath,
+    } else {
+
+      // 4️⃣ الصور ناقصة أو غير موجودة
+      debugPrint(
+        "Downloading answer images for "
+        "question ${q["id"]}",
+      );
+
+      final response = await http.get(
+        Uri.parse(
+          "${ApiService.baseUrl}/expert_answer_images/${q['id']}",
+        ),
+      );
+
+      if (response.statusCode != 200) {
+        throw Exception(
+          "Failed to get answer images",
         );
       }
+
+      final List images =
+          jsonDecode(response.body);
+
+      // 5️⃣ فقط هنا نحذف الصور القديمة
+      await LocalDB.clearAnswerImages(
+        q["id"],
+      );
+
+      // 6️⃣ تنزيل الصور الجديدة
+      for (final img in images) {
+
+        final imageId = img["id"];
+
+        final imagePath =
+            await _downloadAndSaveFile(
+          "${ApiService.baseUrl}/expert_answer_image/$imageId",
+          "answer_${q['id']}_$imageId.jpg",
+        );
+
+        if (imagePath != null &&
+            imagePath.isNotEmpty) {
+
+          await LocalDB.insertAnswerImage(
+            q["id"],
+            imagePath,
+          );
+        }
+      }
     }
+
   } catch (e) {
+
     debugPrint(
-      "No answer images for id ${q['id']}: $e",
+      "Answer images sync error "
+      "for id ${q['id']}: $e",
     );
   }
 }
-
 }
 
 // 4️⃣ إعادة قراءة SQLite بعد التحديث
