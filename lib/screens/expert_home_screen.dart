@@ -428,7 +428,7 @@ Future<void> _openQuotedQuestion(
 Future<void> _showAnswerDialog(Map<String, dynamic> q) async {
     TextEditingController answerController =
         TextEditingController(text: q['answer'] ?? '');
-
+    bool isSending = false;
     bool isRecording = false;
     bool isPlaying = false;
     File? audioAnswerFile;
