@@ -447,7 +447,7 @@ Future<void> _showAnswerDialog(Map<String, dynamic> q) async {
    // answerImages.clear();
 
    // answerImages.addAll(
-      picked.map((e) => File(e.path)),
+    //  picked.map((e) => File(e.path)),
    // );
 
   //});
