@@ -436,29 +436,54 @@ Future<void> _showAnswerDialog(Map<String, dynamic> q) async {
 	List<File> answerImages = [];
     final ImagePicker picker = ImagePicker();
 	
-Future<void> pickImage() async {
+//Future<void> pickImage() async {
 
-   final picked = await picker.pickMultiImage();
+  // final picked = await picker.pickMultiImage();
 
-   if (picked.isEmpty) return;
+   //if (picked.isEmpty) return;
 
-    setState(() {
+    //setState(() {
 
-    answerImages.clear();
+   // answerImages.clear();
 
-    answerImages.addAll(
+   // answerImages.addAll(
       picked.map((e) => File(e.path)),
-    );
+   // );
 
-  });
+  //});
 
-}
+//}
 
 
     showDialog(
       context: context,
       builder: (context) {
         return StatefulBuilder(builder: (context, setState) {
+		Future<void> pickImage() async {
+          try {
+           final picked = await picker.pickMultiImage(
+           imageQuality: 90,
+         );
+
+        if (picked.isEmpty) return;
+
+         setState(() {
+         answerImages.addAll(
+         picked.map((e) => File(e.path)),
+         );
+        });
+       } catch (e) {
+       debugPrint("Image picker error: $e");
+
+       ScaffoldMessenger.of(context).showSnackBar(
+       const SnackBar(
+         content: Text('حدث خطأ أثناء اختيار الصور'),
+        ),
+       );
+      }
+     }
+
+		
  Future<void> startRecording() async {
    final hasPermission = await record.hasPermission();
 
@@ -586,51 +611,81 @@ Future<void> pickImage() async {
            // عرض الصورة
           // عرض الصور المختارة
 if (answerImages.isNotEmpty)
-  Column(
-    children: [
-      const SizedBox(height: 10),
-
-      Wrap(
-        spacing: 8,
-        runSpacing: 8,
-        children: List.generate(
-          answerImages.length,
-          (index) => Stack(
-            children: [
-
-              ClipRRect(
-                borderRadius: BorderRadius.circular(8),
-                child: Image.file(
-                  answerImages[index],
-                  width: 100,
-                  height: 100,
-                  fit: BoxFit.cover,
-                ),
-              ),
-
-              Positioned(
-                right: 0,
-                top: 0,
-                child: IconButton(
-                  icon: const Icon(
-                    Icons.close,
-                    color: Colors.red,
-                  ),
-                  onPressed: () {
-                    setState(() {
-                      answerImages.removeAt(index);
-                    });
-                  },
-                ),
-              ),
-
-            ],
+  Padding(
+    padding: const EdgeInsets.only(top: 12),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'الصور المختارة (${answerImages.length})',
+          style: const TextStyle(
+            fontWeight: FontWeight.bold,
           ),
         ),
-      ),
-    ],
-  ),
-                const SizedBox(height: 12),
+
+        const SizedBox(height: 8),
+
+        SizedBox(
+          height: 110,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            itemCount: answerImages.length,
+            separatorBuilder: (_, __) =>
+                const SizedBox(width: 8),
+            itemBuilder: (context, index) {
+              final file = answerImages[index];
+
+              return Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  GestureDetector(
+                    onTap: () {
+                      _showFullImage(file.path);
+                    },
+                    child: ClipRRect(
+                      borderRadius:
+                          BorderRadius.circular(10),
+                      child: Image.file(
+                        file,
+                        width: 100,
+                        height: 100,
+                        fit: BoxFit.cover,
+                      ),
+                    ),
+                  ),
+
+                  Positioned(
+                    top: -5,
+                    right: -5,
+                    child: GestureDetector(
+                      onTap: () {
+                        setState(() {
+                          answerImages.removeAt(index);
+                        });
+                      },
+                      child: Container(
+                        width: 28,
+                        height: 28,
+                        decoration: const BoxDecoration(
+                          color: Colors.red,
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(
+                          Icons.close,
+                          color: Colors.white,
+                          size: 18,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
+        ),
+      ],
+    ),
+  ),            const SizedBox(height: 12),
 				
 
                 // ▶️ تشغيل / حذف
