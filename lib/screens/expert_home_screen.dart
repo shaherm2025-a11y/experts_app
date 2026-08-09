@@ -716,78 +716,141 @@ if (answerImages.isNotEmpty)
                 onPressed: () => Navigator.pop(context),
               ),
 
-             ElevatedButton(
-               child: const Text('إرسال'),
-               onPressed: () async {
-                final answerText = answerController.text.trim().isEmpty
+            ElevatedButton(
+  onPressed: isSending
+      ? null
+      : () async {
+          setState(() {
+            isSending = true;
+          });
+
+          final answerText =
+              answerController.text.trim().isEmpty
                   ? " "
                   : answerController.text.trim();
 
-                final hasAudio = audioAnswerFile != null;
-				final hasImage = answerImages.isNotEmpty;
+          final hasAudio = audioAnswerFile != null;
+          final hasImage = answerImages.isNotEmpty;
 
-                // ✅ السماح بالإرسال إذا كان هناك نص أو صوت
-                if (answerText.isEmpty && !hasAudio && !hasImage) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('يرجى كتابة الرد أو تسجيل الصوت')),
-                 );
-                  return;
-                }
+          if (answerText.trim().isEmpty &&
+              !hasAudio &&
+              !hasImage) {
+            setState(() {
+              isSending = false;
+            });
 
-                try {
-                 final audioPath = audioAnswerFile?.path;
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text(
+                  'يرجى كتابة الرد أو تسجيل الصوت',
+                ),
+              ),
+            );
+            return;
+          }
 
-                 await LocalDB.updateAnswer(
-                 q['id'],
-                 answerText,
-                 audioPath,
-                 widget.expertId,
-                 isSynced: 0,
-                 );
-				 
-			   
-                await LocalDB.clearAnswerImages(q['id']);
+          try {
+            final audioPath = audioAnswerFile?.path;
 
-                for (final image in answerImages) {
-                 await LocalDB.insertAnswerImage(
-                 q['id'],
-                 image.path,
-                   );
-                } 
-				 
-                final success = await ApiService.answerQuestion(
+            await LocalDB.updateAnswer(
+              q['id'],
+              answerText,
+              audioPath,
+              widget.expertId,
+              isSynced: 0,
+            );
+
+            await LocalDB.clearAnswerImages(q['id']);
+
+            for (final image in answerImages) {
+              await LocalDB.insertAnswerImage(
+                q['id'],
+                image.path,
+              );
+            }
+
+            final success =
+                await ApiService.answerQuestion(
+              q['id'],
+              answerText,
+              widget.expertId,
+              audioFile: audioAnswerFile,
+              imageFiles: answerImages,
+            );
+
+            if (success) {
+              await LocalDB.updateAnswer(
                 q['id'],
                 answerText,
+                audioPath,
                 widget.expertId,
-                audioFile: audioAnswerFile,
-				imageFiles: answerImages,
-                 );
+                isSynced: 1,
+              );
 
-                if (success) {
-                 await LocalDB.updateAnswer(
-                  q['id'],
-                  answerText,
-                  audioPath,
-                  widget.expertId,
-                  isSynced: 1,
-                  );
-
-                 ScaffoldMessenger.of(context).showSnackBar(
-                 const SnackBar(content: Text('تم إرسال الرد بنجاح')),
-                  );
-                } else {
-                  ScaffoldMessenger.of(context).showSnackBar(
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
-                  content: Text('تم حفظ الرد وسيتم إرساله لاحقاً'),
+                    content: Text('تم إرسال الرد بنجاح'),
                   ),
-                 );
-                 }
-                } catch (_) {}
+                );
+              }
 
-               Navigator.pop(context);
-               _loadQuestions();
-              },
-             ),
+              if (context.mounted) {
+                Navigator.pop(context);
+              }
+
+              _loadQuestions();
+
+            } else {
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text(
+                      'تم حفظ الرد وسيتم إرساله لاحقاً',
+                    ),
+                  ),
+                );
+              }
+
+              if (context.mounted) {
+                Navigator.pop(context);
+              }
+
+              _loadQuestions();
+            }
+
+          } catch (e) {
+            debugPrint(
+              "Answer sending error: $e",
+            );
+
+            if (context.mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text(
+                    'حدث خطأ أثناء إرسال الرد',
+                  ),
+                ),
+              );
+            }
+
+            // نسمح بالمحاولة مرة أخرى فقط
+            setState(() {
+              isSending = false;
+            });
+          }
+        },
+  child: isSending
+      ? const SizedBox(
+          width: 22,
+          height: 22,
+          child: CircularProgressIndicator(
+            strokeWidth: 2,
+            color: Colors.white,
+          ),
+        )
+      : const Text('إرسال'),
+),
             ],
           );
         });
