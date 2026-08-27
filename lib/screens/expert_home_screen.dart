@@ -37,7 +37,7 @@ class _ExpertHomeScreenState extends State<ExpertHomeScreen>
   final AudioRecorder record = AudioRecorder();
   Timer? _timer;
 
-  // Lazy-loading / local media cache state.
+  // Lazy-loading / local media cache state
   final Set<int> _answerImagesLoaded = <int>{};
   final Set<int> _answerImagesLoading = <int>{};
   final Map<int, List<String>> _answerImagesCache = <int, List<String>>{};
