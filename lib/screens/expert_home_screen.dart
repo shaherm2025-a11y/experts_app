@@ -9,6 +9,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:http/http.dart' as http;
 import 'local_db.dart';
 import 'dart:convert';
+import 'dart:ui' as ui;
 
 import 'package:firebase_messaging/firebase_messaging.dart';
 
@@ -42,6 +43,9 @@ class _ExpertHomeScreenState extends State<ExpertHomeScreen>
   final Set<int> _answerImagesLoading = <int>{};
   final Map<int, List<String>> _answerImagesCache = <int, List<String>>{};
   final Set<int> _mediaLoading = <int>{};
+  final Set<int> _questionImageLoading = <int>{};
+  final Set<int> _questionAudioLoading = <int>{};
+  final Set<int> _answerAudioLoading = <int>{};
   
 
   @override
@@ -440,6 +444,13 @@ Future<String?> _ensureAnswerAudio(Map<String, dynamic> q) async {
 }
 
 Future<void> _playQuestionAudio(Map<String, dynamic> q) async {
+  final questionId = int.tryParse('${q['id']}') ?? 0;
+  if (_questionAudioLoading.contains(questionId)) return;
+
+  if (mounted) {
+    setState(() => _questionAudioLoading.add(questionId));
+  }
+
   try {
     final path = await _ensureQuestionAudio(q);
 
@@ -461,10 +472,21 @@ Future<void> _playQuestionAudio(Map<String, dynamic> q) async {
         const SnackBar(content: Text('حدث خطأ أثناء تشغيل صوت الاستفسار')),
       );
     }
+  } finally {
+    if (mounted) {
+      setState(() => _questionAudioLoading.remove(questionId));
+    }
   }
 }
 
 Future<void> _playAnswerAudio(Map<String, dynamic> q) async {
+  final questionId = int.tryParse('${q['id']}') ?? 0;
+  if (_answerAudioLoading.contains(questionId)) return;
+
+  if (mounted) {
+    setState(() => _answerAudioLoading.add(questionId));
+  }
+
   try {
     final path = await _ensureAnswerAudio(q);
 
@@ -486,10 +508,22 @@ Future<void> _playAnswerAudio(Map<String, dynamic> q) async {
         const SnackBar(content: Text('حدث خطأ أثناء تشغيل صوت الخبير')),
       );
     }
+  } finally {
+    if (mounted) {
+      setState(() => _answerAudioLoading.remove(questionId));
+    }
   }
 }
 
 Future<void> _openQuestionImage(Map<String, dynamic> q) async {
+  final questionId = int.tryParse('${q['id']}') ?? 0;
+
+  if (_questionImageLoading.contains(questionId)) return;
+
+  if (mounted) {
+    setState(() => _questionImageLoading.add(questionId));
+  }
+
   try {
     final path = await _ensureQuestionImage(q);
 
@@ -509,6 +543,10 @@ Future<void> _openQuestionImage(Map<String, dynamic> q) async {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('حدث خطأ أثناء تحميل الصورة')),
       );
+    }
+  } finally {
+    if (mounted) {
+      setState(() => _questionImageLoading.remove(questionId));
     }
   }
 }
@@ -1167,7 +1205,228 @@ if (answerImages.isNotEmpty)
   );
 }
 
-Widget _buildQuestionCard(Map<String, dynamic> q, {bool answeredCard = false}) {
+Widget _buildQuestionImagePreview(Map<String, dynamic> q) {
+  final questionId = int.tryParse('${q['id']}') ?? 0;
+  final hasImage = _hasQuestionImage(q);
+  final path = q['image_path']?.toString();
+  final localExists =
+      path != null && path.isNotEmpty && File(path).existsSync();
+  final isLoading = _questionImageLoading.contains(questionId);
+
+  if (!hasImage) {
+    return const SizedBox.shrink();
+  }
+
+  return Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      const Padding(
+        padding: EdgeInsets.only(bottom: 6),
+        child: Text(
+          'صورة الاستفسار',
+          style: TextStyle(
+            fontSize: 15,
+            fontWeight: FontWeight.bold,
+            color: Colors.black87,
+          ),
+        ),
+      ),
+      GestureDetector(
+        onTap: isLoading ? null : () => _openQuestionImage(q),
+        child: Container(
+          width: 120,
+          height: 120,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            color: Colors.grey.shade300,
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: localExists
+              ? Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    Image.file(
+                      File(path!),
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) =>
+                          _buildMediaPlaceholder(Icons.broken_image),
+                    ),
+                    if (isLoading)
+                      Container(
+                        color: Colors.black26,
+                        child: const Center(
+                          child: CircularProgressIndicator(
+                            strokeWidth: 3,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                  ],
+                )
+              : Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    // معاينة مموهة قبل التنزيل. الصورة الأصلية لا تُحمّل
+                    // إلا بعد الضغط، حفاظاً على Lazy Loading.
+                    ImageFiltered(
+                      imageFilter: ui.ImageFilter.blur(
+                        sigmaX: 10,
+                        sigmaY: 10,
+                      ),
+                      child: Image.asset(
+                        'assets/placeholder.png',
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => Container(
+                          color: Colors.grey.shade300,
+                        ),
+                      ),
+                    ),
+                    Container(
+                      color: Colors.black12,
+                    ),
+                    Center(
+                      child: isLoading
+                          ? const SizedBox(
+                              width: 42,
+                              height: 42,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 3,
+                                color: Colors.white,
+                              ),
+                            )
+                          : Container(
+                              width: 52,
+                              height: 52,
+                              decoration: BoxDecoration(
+                                color: Colors.black45,
+                                shape: BoxShape.circle,
+                                border: Border.all(
+                                  color: Colors.white70,
+                                  width: 1.5,
+                                ),
+                              ),
+                              child: const Icon(
+                                Icons.download,
+                                color: Colors.white,
+                                size: 28,
+                              ),
+                            ),
+                    ),
+                  ],
+                ),
+        ),
+      ),
+    ],
+  );
+}
+
+Widget _buildQuestionAudioButton(Map<String, dynamic> q) {
+  if (!_hasQuestionAudio(q)) {
+    return const SizedBox.shrink();
+  }
+
+  final questionId = int.tryParse('${q['id']}') ?? 0;
+  final isLoading = _questionAudioLoading.contains(questionId);
+
+  return Row(
+    children: [
+      const Icon(Icons.volume_up, color: Colors.blue),
+      const SizedBox(width: 6),
+      TextButton.icon(
+        icon: isLoading
+            ? const SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            : const Icon(Icons.play_circle_outline),
+        label: Text(
+          isLoading ? 'جاري تحميل الصوت...' : 'تشغيل صوت المزارع',
+          style: const TextStyle(fontWeight: FontWeight.bold),
+        ),
+        onPressed: isLoading ? null : () => _playQuestionAudio(q),
+      ),
+    ],
+  );
+}
+
+Widget _buildAnswerAudioButton(Map<String, dynamic> q) {
+  if (!_hasAnswerAudio(q)) {
+    return const SizedBox.shrink();
+  }
+
+  final questionId = int.tryParse('${q['id']}') ?? 0;
+  final isLoading = _answerAudioLoading.contains(questionId);
+
+  return Row(
+    children: [
+      const Icon(
+        Icons.play_circle_fill,
+        color: Colors.green,
+      ),
+      const SizedBox(width: 6),
+      TextButton.icon(
+        icon: isLoading
+            ? const SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            : const Icon(Icons.play_arrow),
+        label: Text(
+          isLoading ? 'جاري تحميل الصوت...' : 'تشغيل صوت الخبير',
+          style: const TextStyle(fontWeight: FontWeight.bold),
+        ),
+        onPressed: isLoading ? null : () => _playAnswerAudio(q),
+      ),
+    ],
+  );
+}
+
+Widget _buildFarmerHeader(Map<String, dynamic> q) {
+  final farmerId =
+      q['farmer_id'] ?? q['farmerId'] ?? q['farmerID'];
+
+  if (farmerId == null || '$farmerId'.trim().isEmpty) {
+    return const SizedBox.shrink();
+  }
+
+  return Container(
+    width: double.infinity,
+    margin: const EdgeInsets.only(bottom: 10),
+    padding: const EdgeInsets.symmetric(
+      horizontal: 10,
+      vertical: 8,
+    ),
+    decoration: BoxDecoration(
+      color: Colors.green.shade50,
+      borderRadius: BorderRadius.circular(8),
+    ),
+    child: Row(
+      children: [
+        const Icon(
+          Icons.person,
+          size: 22,
+          color: Colors.green,
+        ),
+        const SizedBox(width: 6),
+        Text(
+          'المزارع $farmerId',
+          style: const TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.bold,
+            color: Colors.green,
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+Widget _buildQuestionCard(
+  Map<String, dynamic> q, {
+  bool answeredCard = false,
+}) {
   final questionKey = _questionKeys.putIfAbsent(
     int.tryParse('${q['id']}') ?? q['id'],
     () => GlobalKey(),
@@ -1176,6 +1435,7 @@ Widget _buildQuestionCard(Map<String, dynamic> q, {bool answeredCard = false}) {
   Widget? quoteWidget;
 
   final parentId = q['parent_question_id'];
+
   if (parentId != null) {
     final parentList = [...answered, ...unanswered];
     final parentItems = parentList.where(
@@ -1184,7 +1444,8 @@ Widget _buildQuestionCard(Map<String, dynamic> q, {bool answeredCard = false}) {
 
     if (parentItems.isNotEmpty) {
       final parent = parentItems.first;
-      final parentQuestionId = int.tryParse('${parent['id']}') ?? 0;
+      final parentQuestionId =
+          int.tryParse('${parent['id']}') ?? 0;
 
       quoteWidget = GestureDetector(
         onTap: () => _openQuotedQuestion(
@@ -1197,7 +1458,9 @@ Widget _buildQuestionCard(Map<String, dynamic> q, {bool answeredCard = false}) {
           decoration: BoxDecoration(
             color: Colors.green.shade50,
             borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: Colors.green.shade200),
+            border: Border.all(
+              color: Colors.green.shade200,
+            ),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -1208,21 +1471,31 @@ Widget _buildQuestionCard(Map<String, dynamic> q, {bool answeredCard = false}) {
                   SizedBox(width: 4),
                   Text(
                     'متابعة لاستفسار سابق',
-                    style: TextStyle(fontWeight: FontWeight.bold),
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                 ],
               ),
               const SizedBox(height: 6),
-              if ((parent['answer'] ?? '').toString().trim().isNotEmpty)
+              if ((parent['answer'] ?? '')
+                  .toString()
+                  .trim()
+                  .isNotEmpty)
                 Text(
                   parent['answer'].toString(),
                   maxLines: 3,
                   overflow: TextOverflow.ellipsis,
                 ),
-              if (_mediaCount(parent['answer_image_count']) > 0)
+              if (_mediaCount(
+                    parent['answer_image_count'],
+                  ) >
+                  0)
                 _buildAnswerImagesLazy(
                   parentQuestionId,
-                  _mediaCount(parent['answer_image_count']),
+                  _mediaCount(
+                    parent['answer_image_count'],
+                  ),
                 ),
               if (_hasAnswerAudio(parent))
                 Align(
@@ -1234,7 +1507,8 @@ Widget _buildQuestionCard(Map<String, dynamic> q, {bool answeredCard = false}) {
                       size: 34,
                     ),
                     tooltip: 'تشغيل صوت الخبير',
-                    onPressed: () => _playAnswerAudio(parent),
+                    onPressed: () =>
+                        _playAnswerAudio(parent),
                   ),
                 ),
             ],
@@ -1244,23 +1518,32 @@ Widget _buildQuestionCard(Map<String, dynamic> q, {bool answeredCard = false}) {
     }
   }
 
-  final questionId = int.tryParse('${q['id']}') ?? 0;
-  final imageCount = _mediaCount(q['answer_image_count']);
+  final questionId =
+      int.tryParse('${q['id']}') ?? 0;
+  final imageCount =
+      _mediaCount(q['answer_image_count']);
 
   return Container(
     key: questionKey,
     child: Card(
-      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      margin: const EdgeInsets.symmetric(
+        horizontal: 12,
+        vertical: 6,
+      ),
       elevation: 4,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
       ),
-      child: ListTile(
-        contentPadding: const EdgeInsets.all(12),
-        title: Column(
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            if (quoteWidget != null) quoteWidget!,
+            // رقم المزارع في أعلى كل كرت.
+            _buildFarmerHeader(q),
+
+            if (quoteWidget != null) quoteWidget,
+
             Text(
               q['question']?.toString() ?? '',
               style: const TextStyle(
@@ -1268,117 +1551,75 @@ Widget _buildQuestionCard(Map<String, dynamic> q, {bool answeredCard = false}) {
                 fontSize: 16,
               ),
             ),
+
+            const SizedBox(height: 10),
+
+            // صورة الاستفسار + المعاينة المموهة.
+            _buildQuestionImagePreview(q),
+
+            const SizedBox(height: 8),
+
+            // صوت المزارع.
+            _buildQuestionAudioButton(q),
+
+            if (answeredCard) ...[
+              const Divider(),
+
+              // صوت الخبير.
+              _buildAnswerAudioButton(q),
+
+              if (imageCount > 0)
+                _buildAnswerImagesLazy(
+                  questionId,
+                  imageCount,
+                ),
+
+              const SizedBox(height: 4),
+
+              Text(
+                'الإجابة (${q['expert_name'] ?? 'مجهول'}): '
+                '${q['answer'] ?? 'لا توجد'}',
+              ),
+
+              const SizedBox(height: 4),
+
+              Text(
+                '📅 تاريخ الرد: '
+                '${q['diagnosis_date'] ?? 'غير متاح'}',
+                style: const TextStyle(
+                  fontSize: 13,
+                  color: Colors.grey,
+                ),
+              ),
+
+              const SizedBox(height: 4),
+
+              Text(
+                '📅 تاريخ الاستفسار: '
+                '${q['question_date'] ?? 'غير متاح'}',
+                style: const TextStyle(
+                  fontSize: 13,
+                  color: Colors.grey,
+                ),
+              ),
+            ],
+
+            if (!answeredCard)
+              Align(
+                alignment: Alignment.centerLeft,
+                child: IconButton(
+                  icon: const Icon(
+                    Icons.reply,
+                    color: Colors.green,
+                    size: 28,
+                  ),
+                  tooltip: 'الرد على الاستفسار',
+                  onPressed: () =>
+                      _showAnswerDialog(q),
+                ),
+              ),
           ],
         ),
-        subtitle: Padding(
-          padding: const EdgeInsets.only(top: 8),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // صوت المزارع: الزر موجود دائماً عندما يخبرنا السيرفر أن هناك صوتاً.
-              if (_hasQuestionAudio(q))
-                Row(
-                  children: [
-                    const Icon(Icons.volume_up, color: Colors.blue),
-                    const SizedBox(width: 6),
-                    TextButton.icon(
-                      icon: const Icon(Icons.play_circle_outline),
-                      label: const Text(
-                        'تشغيل صوت المزارع',
-                        style: TextStyle(fontWeight: FontWeight.bold),
-                      ),
-                      onPressed: () => _playQuestionAudio(q),
-                    ),
-                  ],
-                ),
-
-              if (answeredCard) ...[
-                if (_hasAnswerAudio(q))
-                  Row(
-                    children: [
-                      const Icon(
-                        Icons.play_circle_fill,
-                        color: Colors.green,
-                      ),
-                      const SizedBox(width: 6),
-                      TextButton.icon(
-                        icon: const Icon(Icons.play_arrow),
-                        label: const Text(
-                          'تشغيل صوت الخبير',
-                          style: TextStyle(fontWeight: FontWeight.bold),
-                        ),
-                        onPressed: () => _playAnswerAudio(q),
-                      ),
-                    ],
-                  ),
-
-                if (imageCount > 0)
-                  _buildAnswerImagesLazy(questionId, imageCount),
-
-                const Divider(),
-
-                Text(
-                  'الإجابة (${q['expert_name'] ?? 'مجهول'}): ${q['answer'] ?? 'لا توجد'}',
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  '📅 تاريخ الرد: ${q['diagnosis_date'] ?? 'غير متاح'}',
-                  style: const TextStyle(
-                    fontSize: 13,
-                    color: Colors.grey,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  '📅 تاريخ الاستفسار: ${q['question_date'] ?? 'غير متاح'}',
-                  style: const TextStyle(
-                    fontSize: 13,
-                    color: Colors.grey,
-                  ),
-                ),
-              ],
-            ],
-          ),
-        ),
-        leading: GestureDetector(
-          onTap: _hasQuestionImage(q)
-              ? () => _openQuestionImage(q)
-              : null,
-          child: Container(
-            width: 100,
-            height: 100,
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(12),
-              color: Colors.grey.shade200,
-            ),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(12),
-              child: q['image_path'] != null &&
-                      File(q['image_path'].toString()).existsSync()
-                  ? Image.file(
-                      File(q['image_path'].toString()),
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) =>
-                          _buildMediaPlaceholder(Icons.broken_image),
-                    )
-                  : _buildMediaPlaceholder(
-                      _hasQuestionImage(q)
-                          ? Icons.touch_app
-                          : Icons.image_not_supported,
-                    ),
-            ),
-          ),
-        ),
-        trailing: !answeredCard
-            ? IconButton(
-                icon: const Icon(
-                  Icons.reply,
-                  color: Colors.green,
-                  size: 28,
-                ),
-                onPressed: () => _showAnswerDialog(q),
-              )
-            : null,
       ),
     ),
   );
