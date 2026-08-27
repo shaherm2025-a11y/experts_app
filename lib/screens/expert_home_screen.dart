@@ -10,7 +10,6 @@ import 'package:http/http.dart' as http;
 import 'local_db.dart';
 import 'dart:convert';
 
-import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 
 import 'package:image_picker/image_picker.dart';
@@ -37,6 +36,12 @@ class _ExpertHomeScreenState extends State<ExpertHomeScreen>
   final AudioPlayer player = AudioPlayer();
   final AudioRecorder record = AudioRecorder();
   Timer? _timer;
+
+  // Lazy-loading / local media cache state.
+  final Set<int> _answerImagesLoaded = <int>{};
+  final Set<int> _answerImagesLoading = <int>{};
+  final Map<int, List<String>> _answerImagesCache = <int, List<String>>{};
+  final Set<int> _mediaLoading = <int>{};
   
 
   @override
@@ -138,259 +143,468 @@ Future<void> syncUnsyncedAnswers() async {
   }
 }
 	Future<void> _loadQuestions() async {
-	  setState(() => loading = true);
+  if (mounted) {
+    setState(() => loading = true);
+  }
 
-	  // 1️⃣ أولاً: تحميل من SQLite فوراً
-	  final localUnanswered = await LocalDB.getUnanswered();
-	  final localAnswered = await LocalDB.getAnswered();
+  // 1) اعرض البيانات المحلية فوراً.
+  final localUnanswered = await LocalDB.getUnanswered();
+  final localAnswered = await LocalDB.getAnswered();
 
-	  setState(() {
-		unanswered = localUnanswered;
-		answered = localAnswered;
-	  });
+  if (mounted) {
+    setState(() {
+      unanswered = localUnanswered;
+      answered = localAnswered;
+    });
+  }
 
-	  try {
-		// 2️⃣ ثانياً: جلب من السيرفر
+  try {
+    // 2) جلب بيانات الأسئلة فقط.
+    //    مهم: لا يتم تنزيل أي صورة أو صوت هنا.
+    final data =
+        await ApiService.getExpertDiagnoses(widget.expertId);
 
-         final data =
-           await ApiService.getExpertDiagnoses(widget.expertId);
+    final serverUnanswered =
+        List<Map<String, dynamic>>.from(data['unanswered']);
 
-         List<Map<String, dynamic>> serverUnanswered =
-         List<Map<String, dynamic>>.from(data['unanswered']);
+    final serverAnswered =
+        List<Map<String, dynamic>>.from(data['answered']);
 
-         List<Map<String, dynamic>> serverAnswered =
-         List<Map<String, dynamic>>.from(data['answered']);
+    // 3) حفظ metadata فقط في SQLite.
+    for (final q in [...serverUnanswered, ...serverAnswered]) {
+      await LocalDB.insertOrUpdateQuestion({
+        "id": q["id"],
+        "question": q["question"],
+        "answer": q["answer"],
+        "parent_question_id": q["parent_question_id"],
+        "expert_name": q["expert_name"],
+        "status": q["status"],
+        "question_date": q["question_date"],
+        "diagnosis_date": q["diagnosis_date"],
+        "has_image": q["has_image"],
+        "question_has_audio": q["question_has_audio"],
+        "answer_has_audio": q["answer_has_audio"],
+        "answer_image_count": q["answer_image_count"],
+      });
+    }
 
-          // 3️⃣ حفظ البيانات + تحميل الملفات
-        for (var q in [...serverUnanswered, ...serverAnswered]) {
+    // 4) إعادة قراءة SQLite بعد تحديث البيانات.
+    final updatedUnanswered = await LocalDB.getUnanswered();
+    final updatedAnswered = await LocalDB.getAnswered();
 
-          await LocalDB.insertOrUpdateQuestion({
-           "id": q["id"],
-           "question": q["question"],
-           "answer": q["answer"],
-		   "parent_question_id": q["parent_question_id"],
-           "expert_name": q["expert_name"],
-           "status": q["status"],
-           "question_date": q["question_date"],
-           "diagnosis_date": q["diagnosis_date"],
+    if (!mounted) return;
 
-           "has_image": q["has_image"],
-           "question_has_audio": q["question_has_audio"],
-           "answer_has_audio": q["answer_has_audio"],
-		   "answer_image_count": q["answer_image_count"],
-          });
+    setState(() {
+      unanswered = updatedUnanswered;
+      answered = updatedAnswered;
+      loading = false;
+    });
+  } catch (e) {
+    debugPrint("Load questions error: $e");
 
-         // ===== تحميل صورة السؤال =====
-        if (q["has_image"] == 1 || q["has_image"] == true) {
-
-         try {
-
-           final dir =
-             await getApplicationDocumentsDirectory();
-
-           final filePath = '${dir.path}/q_${q['id']}.jpg';
-           final file = File(filePath);
-
-           if (!file.existsSync()) {
-
-           final imagePath = await _downloadAndSaveFile(
-             "${ApiService.baseUrl}/expert_question_image/${q['id']}",
-             "q_${q['id']}.jpg",
-            );
-
-           if (imagePath != null &&
-             imagePath.isNotEmpty) {
-
-             await LocalDB.updateQuestionImagePath(
-               q['id'], imagePath);
-             }
-            }
-
-           } catch (_) {
-           debugPrint("No image for question ${q['id']}");
-           }
-          }
-
-         // ===== تحميل صوت السؤال =====
-        if (q["question_has_audio"] == true || q["question_has_audio"] == 1) {
-
-          try {
-
-         final dir =
-           await getApplicationDocumentsDirectory();
-
-         final filePath = '${dir.path}/q_${q['id']}.m4a';
-         final file = File(filePath);
-
-         if (!file.existsSync()) {
-
-           final audioPath = await _downloadAndSaveFile(
-           "${ApiService.baseUrl}/expert_question_audio/${q['id']}",
-           "q_${q['id']}.m4a",
-          );
-
-          if (audioPath != null &&
-            audioPath.isNotEmpty) {
-
-             await LocalDB.updateQuestionAudioPath(
-               q['id'], audioPath);
-        }
-      }
-
-       } catch (_) {
-        debugPrint(
-          "No question audio for id ${q['id']}");
-      }
-   }
-
-  // ===== تحميل صوت الإجابة =====
-  if (q["answer_has_audio"] == true || q["answer_has_audio"] == 1) {
-
-    try {
-
-      final dir =
-          await getApplicationDocumentsDirectory();
-
-      final filePath = '${dir.path}/a_${q['id']}.m4a';
-      final file = File(filePath);
-
-      if (!file.existsSync()) {
-
-        final answerAudioPath =
-            await _downloadAndSaveFile(
-          "${ApiService.baseUrl}/expert_answer_audio/${q['id']}",
-          "a_${q['id']}.m4a",
-        );
-
-        if (answerAudioPath != null &&
-            answerAudioPath.isNotEmpty) {
-
-          await LocalDB.updateAnswerAudioPath(
-              q['id'], answerAudioPath);
-        }
-      }
-
-    } catch (_) {
-      debugPrint(
-          "No answer audio for id ${q['id']}");
+    if (mounted) {
+      setState(() => loading = false);
     }
   }
-  
-  // ===== تحميل صورة الإجابة =====
-// ===== مزامنة صور الإجابة =====
-final serverImageCount =
-    int.tryParse(
-      "${q["answer_image_count"] ?? 0}",
-    ) ?? 0;
+}
 
-if (serverImageCount > 0) {
+// ============================================================================
+// Lazy Loading للوسائط
+// ============================================================================
+
+bool _isTrue(dynamic value) {
+  return value == true || value == 1 || value == "1";
+}
+
+Future<String?> _ensureQuestionImage(Map<String, dynamic> q) async {
+  final questionId = int.tryParse('${q['id']}');
+  if (questionId == null || !_isTrue(q['has_image'])) return null;
+  final id = questionId;
+
+  final currentPath = q['image_path']?.toString();
+  if (currentPath != null &&
+      currentPath.isNotEmpty &&
+      File(currentPath).existsSync()) {
+    return currentPath;
+  }
+
+  final dir = await getApplicationDocumentsDirectory();
+  final filePath = '${dir.path}/q_$id.jpg';
+  final file = File(filePath);
+
+  if (file.existsSync() && file.lengthSync() > 0) {
+    await LocalDB.updateQuestionImagePath(id, filePath);
+    return filePath;
+  }
+
+  if (_mediaLoading.contains(id)) {
+    // ننتظر قليلاً إذا كان نفس الملف قيد التنزيل من ضغطة أخرى.
+    for (int i = 0; i < 100; i++) {
+      await Future.delayed(const Duration(milliseconds: 100));
+      if (!_mediaLoading.contains(id)) break;
+    }
+
+    if (file.existsSync() && file.lengthSync() > 0) {
+      await LocalDB.updateQuestionImagePath(id, filePath);
+      return filePath;
+    }
+  }
+
+  _mediaLoading.add(id);
   try {
-    // 1️⃣ نقرأ الصور الموجودة محليًا أولاً
-    final localImages =
-        await LocalDB.getAnswerImages(q["id"]);
+    final path = await _downloadAndSaveFile(
+      "${ApiService.baseUrl}/expert_question_image/$id",
+      "q_$id.jpg",
+    );
 
-    // 2️⃣ نتحقق أن الملفات المحلية موجودة فعليًا
+    if (path != null && path.isNotEmpty) {
+      await LocalDB.updateQuestionImagePath(id, path);
+      return path;
+    }
+  } finally {
+    _mediaLoading.remove(id);
+  }
+
+  return null;
+}
+
+Future<String?> _ensureQuestionAudio(Map<String, dynamic> q) async {
+  final questionId = int.tryParse('${q['id']}');
+  if (questionId == null || !_isTrue(q['question_has_audio'])) return null;
+  final id = questionId;
+
+  final currentPath = q['question_audio_path']?.toString();
+  if (currentPath != null &&
+      currentPath.isNotEmpty &&
+      File(currentPath).existsSync()) {
+    return currentPath;
+  }
+
+  final dir = await getApplicationDocumentsDirectory();
+  final filePath = '${dir.path}/q_$id.m4a';
+  final file = File(filePath);
+
+  if (file.existsSync() && file.lengthSync() > 0) {
+    await LocalDB.updateQuestionAudioPath(id, filePath);
+    return filePath;
+  }
+
+  final lockId = -id.abs() - 1000000;
+
+  if (_mediaLoading.contains(lockId)) {
+    for (int i = 0; i < 100; i++) {
+      await Future.delayed(const Duration(milliseconds: 100));
+      if (!_mediaLoading.contains(lockId)) break;
+    }
+
+    if (file.existsSync() && file.lengthSync() > 0) {
+      await LocalDB.updateQuestionAudioPath(id, filePath);
+      return filePath;
+    }
+  }
+
+  _mediaLoading.add(lockId);
+  try {
+    final path = await _downloadAndSaveFile(
+      "${ApiService.baseUrl}/expert_question_audio/$id",
+      "q_$id.m4a",
+    );
+
+    if (path != null && path.isNotEmpty) {
+      await LocalDB.updateQuestionAudioPath(id, path);
+      return path;
+    }
+  } finally {
+    _mediaLoading.remove(lockId);
+  }
+
+  return null;
+}
+
+Future<String?> _ensureAnswerAudio(Map<String, dynamic> q) async {
+  final questionId = int.tryParse('${q['id']}');
+  if (questionId == null || !_isTrue(q['answer_has_audio'])) return null;
+  final id = questionId;
+
+  final currentPath = q['answer_audio_path']?.toString();
+  if (currentPath != null &&
+      currentPath.isNotEmpty &&
+      File(currentPath).existsSync()) {
+    return currentPath;
+  }
+
+  final dir = await getApplicationDocumentsDirectory();
+  final filePath = '${dir.path}/a_$id.m4a';
+  final file = File(filePath);
+
+  if (file.existsSync() && file.lengthSync() > 0) {
+    await LocalDB.updateAnswerAudioPath(id, filePath);
+    return filePath;
+  }
+
+  final lockId = -id.abs() - 2000000;
+
+  if (_mediaLoading.contains(lockId)) {
+    for (int i = 0; i < 100; i++) {
+      await Future.delayed(const Duration(milliseconds: 100));
+      if (!_mediaLoading.contains(lockId)) break;
+    }
+
+    if (file.existsSync() && file.lengthSync() > 0) {
+      await LocalDB.updateAnswerAudioPath(id, filePath);
+      return filePath;
+    }
+  }
+
+  _mediaLoading.add(lockId);
+  try {
+    final path = await _downloadAndSaveFile(
+      "${ApiService.baseUrl}/expert_answer_audio/$id",
+      "a_$id.m4a",
+    );
+
+    if (path != null && path.isNotEmpty) {
+      await LocalDB.updateAnswerAudioPath(id, path);
+      return path;
+    }
+  } finally {
+    _mediaLoading.remove(lockId);
+  }
+
+  return null;
+}
+
+Future<void> _playQuestionAudio(Map<String, dynamic> q) async {
+  try {
+    final path = await _ensureQuestionAudio(q);
+
+    if (!mounted) return;
+
+    if (path == null || !File(path).existsSync()) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('تعذر تحميل صوت الاستفسار')),
+      );
+      return;
+    }
+
+    await player.stop();
+    await player.play(DeviceFileSource(path));
+  } catch (e) {
+    debugPrint("Question audio error: $e");
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('حدث خطأ أثناء تشغيل صوت الاستفسار')),
+      );
+    }
+  }
+}
+
+Future<void> _playAnswerAudio(Map<String, dynamic> q) async {
+  try {
+    final path = await _ensureAnswerAudio(q);
+
+    if (!mounted) return;
+
+    if (path == null || !File(path).existsSync()) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('تعذر تحميل صوت الخبير')),
+      );
+      return;
+    }
+
+    await player.stop();
+    await player.play(DeviceFileSource(path));
+  } catch (e) {
+    debugPrint("Answer audio error: $e");
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('حدث خطأ أثناء تشغيل صوت الخبير')),
+      );
+    }
+  }
+}
+
+Future<void> _openQuestionImage(Map<String, dynamic> q) async {
+  try {
+    final path = await _ensureQuestionImage(q);
+
+    if (!mounted) return;
+
+    if (path == null || !File(path).existsSync()) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('تعذر تحميل صورة الاستفسار')),
+      );
+      return;
+    }
+
+    _showFullImage(path);
+  } catch (e) {
+    debugPrint("Question image error: $e");
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('حدث خطأ أثناء تحميل الصورة')),
+      );
+    }
+  }
+}
+
+Future<List<String>> _loadAnswerImagesOnDemand(int questionId, int expectedImageCount) async {
+  if (_answerImagesLoaded.contains(questionId)) {
+    return _answerImagesCache[questionId] ?? <String>[];
+  }
+
+  if (_answerImagesLoading.contains(questionId)) {
+    for (int i = 0; i < 150; i++) {
+      await Future.delayed(const Duration(milliseconds: 100));
+      if (!_answerImagesLoading.contains(questionId)) break;
+    }
+    return _answerImagesCache[questionId] ?? <String>[];
+  }
+
+  _answerImagesLoading.add(questionId);
+
+  try {
+    // إذا كانت الصور موجودة محلياً بالفعل، نستخدمها بدون اتصال.
+    final localImages = await LocalDB.getAnswerImages(questionId);
     final validLocalImages = localImages
-        .where(
-          (path) => File(path).existsSync(),
-        )
+        .where((path) => File(path).existsSync() && File(path).lengthSync() > 0)
         .toList();
 
-    debugPrint(
-      "Answer images for ${q["id"]}: "
-      "local=${validLocalImages.length}, "
-      "server=$serverImageCount",
+    if (expectedImageCount > 0 &&
+        validLocalImages.length == expectedImageCount) {
+      _answerImagesCache[questionId] = validLocalImages;
+      _answerImagesLoaded.add(questionId);
+      return validLocalImages;
+    }
+
+    // أول اتصال بالسيرفر يحدث فقط بعد ضغط المستخدم على الصور.
+    final response = await http.get(
+      Uri.parse(
+        "${ApiService.baseUrl}/expert_answer_images/$questionId",
+      ),
     );
 
-    // 3️⃣ إذا الصور المحلية كاملة، لا نذهب للسيرفر
-    if (validLocalImages.length == serverImageCount) {
-
-      debugPrint(
-        "Using local answer images for "
-        "question ${q["id"]}",
+    if (response.statusCode != 200) {
+      throw Exception(
+        "Failed to get answer images: ${response.statusCode}",
       );
+    }
 
-    } else {
+    final decoded = jsonDecode(response.body);
+    if (decoded is! List) {
+      throw Exception("Invalid answer images response");
+    }
 
-      // 4️⃣ الصور ناقصة أو غير موجودة
-      debugPrint(
-        "Downloading answer images for "
-        "question ${q["id"]}",
-      );
+    final downloadedPaths = <String>[];
 
-      final response = await http.get(
-        Uri.parse(
-          "${ApiService.baseUrl}/expert_answer_images/${q['id']}",
-        ),
-      );
+    for (final img in decoded) {
+      final imageId = img["id"];
+      if (imageId == null) continue;
 
-      if (response.statusCode != 200) {
-        throw Exception(
-          "Failed to get answer images",
+      final dir = await getApplicationDocumentsDirectory();
+      final filePath =
+          '${dir.path}/answer_${questionId}_$imageId.jpg';
+
+      final file = File(filePath);
+
+      String? path;
+      if (file.existsSync() && file.lengthSync() > 0) {
+        path = filePath;
+      } else {
+        path = await _downloadAndSaveFile(
+          "${ApiService.baseUrl}/expert_answer_image/$imageId",
+          "answer_${questionId}_$imageId.jpg",
         );
       }
 
-      final List images =
-          jsonDecode(response.body);
-
-      // 5️⃣ فقط هنا نحذف الصور القديمة
-      await LocalDB.clearAnswerImages(
-        q["id"],
-      );
-
-      // 6️⃣ تنزيل الصور الجديدة
-      for (final img in images) {
-
-        final imageId = img["id"];
-
-        final imagePath =
-            await _downloadAndSaveFile(
-          "${ApiService.baseUrl}/expert_answer_image/$imageId",
-          "answer_${q['id']}_$imageId.jpg",
-        );
-
-        if (imagePath != null &&
-            imagePath.isNotEmpty) {
-
-          await LocalDB.insertAnswerImage(
-            q["id"],
-            imagePath,
-          );
-        }
+      if (path != null && path.isNotEmpty) {
+        downloadedPaths.add(path);
       }
     }
 
-  } catch (e) {
+    await LocalDB.clearAnswerImages(questionId);
 
+    for (final path in downloadedPaths) {
+      await LocalDB.insertAnswerImage(questionId, path);
+    }
+
+    _answerImagesCache[questionId] = downloadedPaths;
+    _answerImagesLoaded.add(questionId);
+
+    return downloadedPaths;
+  } catch (e) {
     debugPrint(
-      "Answer images sync error "
-      "for id ${q['id']}: $e",
+      "Lazy answer images error for $questionId: $e",
     );
+    return _answerImagesCache[questionId] ?? <String>[];
+  } finally {
+    _answerImagesLoading.remove(questionId);
   }
 }
+
+Widget _buildAnswerImagesLazy(int questionId, int imageCount) {
+  final images = _answerImagesCache[questionId] ?? <String>[];
+  final isLoading = _answerImagesLoading.contains(questionId);
+
+  if (images.isEmpty && !_answerImagesLoaded.contains(questionId)) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: OutlinedButton.icon(
+        icon: isLoading
+            ? const SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            : const Icon(Icons.photo_library_outlined),
+        label: Text(
+          isLoading
+              ? 'جاري تحميل الصور...'
+              : 'عرض الصور${imageCount > 0 ? ' ($imageCount)' : ''}',
+        ),
+        onPressed: isLoading
+            ? null
+            : () async {
+                await _loadAnswerImagesOnDemand(questionId, imageCount);
+                if (mounted) setState(() {});
+              },
+      ),
+    );
+  }
+
+  if (images.isEmpty) {
+    return const SizedBox();
+  }
+
+  return Padding(
+    padding: const EdgeInsets.symmetric(vertical: 8),
+    child: Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: images.map((path) {
+        return GestureDetector(
+          onTap: () => _showFullImage(path),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(10),
+            child: Image.file(
+              File(path),
+              width: 120,
+              height: 120,
+              fit: BoxFit.cover,
+              errorBuilder: (_, __, ___) => Container(
+                width: 120,
+                height: 120,
+                color: Colors.grey.shade200,
+                child: const Icon(Icons.broken_image),
+              ),
+            ),
+          ),
+        );
+      }).toList(),
+    ),
+  );
 }
 
-// 4️⃣ إعادة قراءة SQLite بعد التحديث
-final updatedUnanswered =
-    await LocalDB.getUnanswered();
-
-final updatedAnswered =
-    await LocalDB.getAnswered();
-
-setState(() {
-
-  unanswered = updatedUnanswered;
-  answered = updatedAnswered;
-
-  loading = false;
-
-});
-
-	  } catch (e) {
-		// إذا فشل السيرفر — نعتمد على المحلي فقط
-		setState(() => loading = false);
-	  }
-	}
 void _jumpToQuestion(int parentQuestionId) {
 
   _tabController.animateTo(1);
@@ -878,32 +1092,16 @@ if (answerImages.isNotEmpty)
 		),
 	  );
 	}
-	void _showNetworkImage(String imageUrl) {
-  showDialog(
-    context: context,
-    builder: (_) => Dialog(
-      backgroundColor: Colors.transparent,
-      child: InteractiveViewer(
-        panEnabled: true,
-        minScale: 0.5,
-        maxScale: 5.0,
-        child: Image.network(
-          imageUrl,
-          fit: BoxFit.contain,
-          errorBuilder: (_, __, ___) {
-            return const Center(
-              child: Icon(
-                Icons.image_not_supported,
-                size: 80,
-                color: Colors.white,
-              ),
-            );
-          },
-        ),
-      ),
+	Widget _buildMediaPlaceholder(IconData icon) {
+  return Center(
+    child: Icon(
+      icon,
+      size: 38,
+      color: Colors.grey.shade600,
     ),
   );
 }
+
 Widget _buildQuestionCard(Map<String, dynamic> q, {bool answeredCard = false}) {
   final questionKey =
      _questionKeys.putIfAbsent(
@@ -971,48 +1169,21 @@ if ((parent["answer"] ?? "").toString().isNotEmpty)
 
 const SizedBox(height: 8),
 
-FutureBuilder<List<String>>(
-  future: LocalDB.getAnswerImages(parent["id"]),
-  builder: (context, snapshot) {
+_buildAnswerImagesLazy(
+              int.tryParse("${parent["id"]}") ?? 0,
+              int.tryParse("${parent["answer_image_count"] ?? 0}") ?? 0,
+            ),
 
-    if (!snapshot.hasData || snapshot.data!.isEmpty) {
-      return const SizedBox();
-    }
-
-    final images = snapshot.data!;
-
-    return Wrap(
-      spacing: 8,
-      runSpacing: 8,
-      children: images.map((path) {
-
-  return GestureDetector(
-    onTap: () => _showFullImage(path),
-    child: Container(
-      width: 70,
-      height: 70,
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(8),
-        image: DecorationImage(
-          image: FileImage(File(path)),
-          fit: BoxFit.cover,
-        ),
-      ),
-    ),
-  );
-
-}).toList(),
-    );
-  },
-),
-
-            if (parent["answer_audio_path"] != null && File(parent["answer_audio_path"]).existsSync())
+            if (_isTrue(parent["answer_has_audio"]))
               IconButton(
                 icon: const Icon(
                   Icons.play_circle_fill,
                   color: Colors.green,
                   size: 34,
                 ),
+                tooltip: 'تشغيل صوت الخبير',
+                onPressed: () => _playAnswerAudio(parent),
+              ),
                 onPressed: () async {
 
                   await player.stop();
@@ -1070,29 +1241,22 @@ FutureBuilder<List<String>>(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
 
-            // 🔊 زر تشغيل صوت الاستفسار (يظهر دائماً)
-            if (q['question_audio_path'] != null &&
-             File(q['question_audio_path']).existsSync())
-             Row(
-             children: [
-            const Icon(Icons.volume_up, color: Colors.blue),
-            const SizedBox(width: 6),
-            TextButton(
-             child: const Text(
-              'صوت المزارع',
-              style: TextStyle(fontWeight: FontWeight.bold),
-             ),
-             onPressed: () async {
-             try {
-              await player.stop();
-              await player.play(
-              DeviceFileSource(q['question_audio_path']),
-              );
-              } catch (e) {
-              print("خطأ في تشغيل صوت الاستفسار: $e");
-                }
-              },
-             ),
+            // 🔊 صوت الاستفسار — لا يتم تنزيله إلا عند الضغط
+            if (_isTrue(q['question_has_audio']))
+              Row(
+                children: [
+                  const Icon(Icons.volume_up, color: Colors.blue),
+                  const SizedBox(width: 6),
+                  TextButton.icon(
+                    icon: const Icon(Icons.play_circle_outline),
+                    label: const Text(
+                      'صوت المزارع',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    onPressed: () => _playQuestionAudio(q),
+                  ),
+                ],
+              ),
             ],
            ),
             // =============================
@@ -1100,73 +1264,36 @@ FutureBuilder<List<String>>(
             // =============================
             if (answeredCard) ...[
 
-              // 🔊 زر تشغيل صوت الرد
-              if (q['answer_audio_path'] != null &&
-               File(q['answer_audio_path']).existsSync())
-               Row(
-              children: [
-              const Icon(Icons.play_circle_fill, color: Colors.green),
-              const SizedBox(width: 6),
-              TextButton(
-              child: const Text(
-              'صوت الخبير',
-              style: TextStyle(fontWeight: FontWeight.bold),
-              ),
-              onPressed: () async {
-             try {
-              await player.stop();
-              await player.play(
-              DeviceFileSource(q['answer_audio_path']),
-             );
-             } catch (e) {
-               print("خطأ في تشغيل صوت الرد: $e");
-             }
-             },
-            ),
+              // 🔊 صوت الإجابة — لا يتم تنزيله إلا عند الضغط
+              if (_isTrue(q['answer_has_audio']))
+                Row(
+                  children: [
+                    const Icon(
+                      Icons.play_circle_fill,
+                      color: Colors.green,
+                    ),
+                    const SizedBox(width: 6),
+                    TextButton.icon(
+                      icon: const Icon(Icons.play_arrow),
+                      label: const Text(
+                        'صوت الخبير',
+                        style: TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                      onPressed: () => _playAnswerAudio(q),
+                    ),
+                  ],
+                ),
+
            ],
           ),
 
              const Divider(),
 
-FutureBuilder<List<String>>(
-  future: LocalDB.getAnswerImages(q['id']),
-  builder: (context, snapshot) {
+_buildAnswerImagesLazy(
+                int.tryParse("${q['id']}") ?? 0,
+                int.tryParse("${q['answer_image_count'] ?? 0}") ?? 0,
+              ),
 
-    if (!snapshot.hasData) {
-      return const SizedBox();
-    }
-
-    final images = snapshot.data!;
-
-    if (images.isEmpty) {
-      return const SizedBox();
-    }
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      child: Wrap(
-        spacing: 8,
-        runSpacing: 8,
-        children: images.map((path) {
-
-  return GestureDetector(
-    onTap: () => _showFullImage(path),
-    child: ClipRRect(
-      borderRadius: BorderRadius.circular(10),
-      child: Image.file(
-        File(path),
-        width: 120,
-        height: 120,
-        fit: BoxFit.cover,
-      ),
-    ),
-  );
-
-}).toList(),
-      ),
-    );
-  },
-),
               // ✍️ نص الإجابة
             Text(
                'الإجابة (${q['expert_name'] ?? 'مجهول'}): ${q['answer'] ?? "لا توجد"}',
@@ -1191,24 +1318,34 @@ FutureBuilder<List<String>>(
       ),
 
       // =============================
-      // صورة السؤال
+      // صورة السؤال — Lazy Loading
       // =============================
       leading: GestureDetector(
-        onTap: () => _showFullImage(q['image_path']),
+        onTap: _isTrue(q['has_image'])
+            ? () => _openQuestionImage(q)
+            : null,
         child: Container(
           width: 100,
           height: 100,
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(12),
-            image: q['image_path'] != null &&
+            color: Colors.grey.shade200,
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(12),
+            child: q['image_path'] != null &&
                     File(q['image_path']).existsSync()
-                ? DecorationImage(
-                    image: FileImage(File(q['image_path'])),
+                ? Image.file(
+                    File(q['image_path']),
                     fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) => _buildMediaPlaceholder(
+                      Icons.broken_image,
+                    ),
                   )
-                : const DecorationImage(
-                    image: AssetImage("assets/placeholder.png"),
-                    fit: BoxFit.cover,
+                : _buildMediaPlaceholder(
+                    _isTrue(q['has_image'])
+                        ? Icons.download
+                        : Icons.image_not_supported,
                   ),
           ),
         ),

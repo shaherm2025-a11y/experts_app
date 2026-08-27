@@ -149,63 +149,7 @@ Future<String> _downloadAndSaveFile(String url, String fileName) async {
           "diagnosis_date": q["diagnosis_date"],
           });
 
-		  // تحميل الصورة
-		  try {
-          final dir = await getApplicationDocumentsDirectory();
-          final file = File('${dir.path}/q_${q['id']}.jpg');
-
-          // 📥 حمّل فقط إذا غير موجودة
-         if (!file.existsSync()) {
-
-          final imagePath = await _downloadAndSaveFile(
-          "${ApiService.baseUrl}/expert_question_image/${q['id']}",
-          "q_${q['id']}.jpg",
-          );
-
-          await LocalDB.updateQuestionImagePath(q['id'], imagePath);
-         }
-
-         } catch (_) {}
-
-		  // تحميل صوت السؤال
-		  try {
-          final dir = await getApplicationDocumentsDirectory();
-          final file = File('${dir.path}/q_${q['id']}.mp3');
-
-          if (!file.existsSync()) {
-
-          final audioPath = await _downloadAndSaveFile(
-          "${ApiService.baseUrl}/expert_question_audio/${q['id']}",
-          "q_${q['id']}.mp3",
-          );
-
-         await LocalDB.updateQuestionAudioPath(q['id'], audioPath);
-         }
-
-        } catch (_) {}
-
-		  // تحميل صوت الرد إن وجد
-		  if (q["status"] == 1) {
-            try {
-
-           final dir = await getApplicationDocumentsDirectory();
-           final file = File('${dir.path}/a_${q['id']}.mp3');
-
-           if (!file.existsSync()) {
-
-           final answerAudioPath = await _downloadAndSaveFile(
-           "${ApiService.baseUrl}/expert_answer_audio/${q['id']}",
-           "a_${q['id']}.mp3",
-            );
-
-            await LocalDB.updateAnswerAudioPath(
-            q['id'],
-            answerAudioPath,
-            );
-           }
-
-           } catch (_) {}
-          }
+		 
 		}
 
 		// 4️⃣ إعادة قراءة SQLite بعد التحديث
