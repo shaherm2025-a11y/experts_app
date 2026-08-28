@@ -303,6 +303,7 @@ Future<String?> _ensureQuestionImage(Map<String, dynamic> q) async {
 
   if (file.existsSync() && file.lengthSync() > 0) {
     await LocalDB.updateQuestionImagePath(id, filePath);
+    q['image_path'] = filePath;
     return filePath;
   }
 
@@ -315,6 +316,7 @@ Future<String?> _ensureQuestionImage(Map<String, dynamic> q) async {
 
     if (file.existsSync() && file.lengthSync() > 0) {
       await LocalDB.updateQuestionImagePath(id, filePath);
+      q['image_path'] = filePath;
       return filePath;
     }
   }
@@ -328,6 +330,7 @@ Future<String?> _ensureQuestionImage(Map<String, dynamic> q) async {
 
     if (path != null && path.isNotEmpty) {
       await LocalDB.updateQuestionImagePath(id, path);
+      q['image_path'] = path;
       return path;
     }
   } finally {
@@ -529,31 +532,31 @@ Future<void> _openQuestionImage(Map<String, dynamic> q) async {
 
     if (!mounted) return;
 
-    if (path == null || !File(path).existsSync()) {
+    if (path == null || path.isEmpty || !File(path).existsSync()) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('تعذر تحميل صورة الاستفسار')),
       );
       return;
     }
 
-    // نضمن فك ترميز الصورة مسبقاً حتى تظهر نافذة التكبير مباشرة
-    // بعد انتهاء التنزيل، بدلاً من ظهور إطار فارغ/متأخر.
-    await precacheImage(
-      FileImage(File(path)),
-      context,
-    );
+    // مهم جداً: نضع المسار داخل نفس الكرت فور اكتمال التنزيل.
+    // لا نستخدم precacheImage هنا لأنه كان يؤخر ظهور الصورة وفتح التكبير.
+    q['image_path'] = path;
+
+    // أولاً: إزالة مؤشر التحميل وإظهار الصورة داخل الكرت.
+    setState(() {
+      _questionImageLoading.remove(questionId);
+    });
+
+    // نعطي Flutter إطاراً واحداً فقط لإعادة بناء الكرت بالصورة الجديدة.
+    await WidgetsBinding.instance.endOfFrame;
 
     if (!mounted) return;
 
-    // إزالة مؤشر التحميل قبل فتح نافذة التكبير حتى لا يبقى
-    // المؤشر ظاهراً خلف نافذة الصورة.
-    setState(() => _questionImageLoading.remove(questionId));
-    await Future<void>.delayed(const Duration(milliseconds: 30));
-
-    if (!mounted) return;
+    // بعد أن أصبحت الصورة ظاهرة في الكرت، افتح التكبير.
     await _showFullImage(path);
   } catch (e) {
-    debugPrint("Question image error: $e");
+    debugPrint('Question image error: $e');
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('حدث خطأ أثناء تحميل الصورة')),
