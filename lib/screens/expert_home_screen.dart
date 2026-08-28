@@ -536,7 +536,22 @@ Future<void> _openQuestionImage(Map<String, dynamic> q) async {
       return;
     }
 
-    _showFullImage(path);
+    // نضمن فك ترميز الصورة مسبقاً حتى تظهر نافذة التكبير مباشرة
+    // بعد انتهاء التنزيل، بدلاً من ظهور إطار فارغ/متأخر.
+    await precacheImage(
+      FileImage(File(path)),
+      context,
+    );
+
+    if (!mounted) return;
+
+    // إزالة مؤشر التحميل قبل فتح نافذة التكبير حتى لا يبقى
+    // المؤشر ظاهراً خلف نافذة الصورة.
+    setState(() => _questionImageLoading.remove(questionId));
+    await Future<void>.delayed(const Duration(milliseconds: 30));
+
+    if (!mounted) return;
+    await _showFullImage(path);
   } catch (e) {
     debugPrint("Question image error: $e");
     if (mounted) {
@@ -545,7 +560,7 @@ Future<void> _openQuestionImage(Map<String, dynamic> q) async {
       );
     }
   } finally {
-    if (mounted) {
+    if (mounted && _questionImageLoading.contains(questionId)) {
       setState(() => _questionImageLoading.remove(questionId));
     }
   }
@@ -564,7 +579,9 @@ Future<List<String>> _loadAnswerImagesOnDemand(int questionId, int expectedImage
     return _answerImagesCache[questionId] ?? <String>[];
   }
 
-  _answerImagesLoading.add(questionId);
+  if (mounted) {
+    setState(() => _answerImagesLoading.add(questionId));
+  }
 
   try {
     // إذا كانت الصور موجودة محلياً بالفعل، نستخدمها بدون اتصال.
@@ -641,7 +658,9 @@ Future<List<String>> _loadAnswerImagesOnDemand(int questionId, int expectedImage
     );
     return _answerImagesCache[questionId] ?? <String>[];
   } finally {
-    _answerImagesLoading.remove(questionId);
+    if (mounted) {
+      setState(() => _answerImagesLoading.remove(questionId));
+    }
   }
 }
 
@@ -652,25 +671,56 @@ Widget _buildAnswerImagesLazy(int questionId, int imageCount) {
   if (images.isEmpty && !_answerImagesLoaded.contains(questionId)) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8),
-      child: OutlinedButton.icon(
-        icon: isLoading
-            ? const SizedBox(
-                width: 18,
-                height: 18,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              )
-            : const Icon(Icons.photo_library_outlined),
-        label: Text(
-          isLoading
-              ? 'جاري تحميل الصور...'
-              : 'عرض الصور${imageCount > 0 ? ' ($imageCount)' : ''}',
-        ),
-        onPressed: isLoading
+      child: GestureDetector(
+        onTap: isLoading
             ? null
             : () async {
-                await _loadAnswerImagesOnDemand(questionId, imageCount);
-                if (mounted) setState(() {});
+                // الدالة نفسها تُظهر مؤشر التحميل فوراً وتزيله بعد الانتهاء.
+                await _loadAnswerImagesOnDemand(
+                  questionId,
+                  imageCount,
+                );
               },
+        child: Container(
+          width: double.infinity,
+          constraints: const BoxConstraints(minHeight: 92),
+          padding: const EdgeInsets.symmetric(
+            horizontal: 16,
+            vertical: 12,
+          ),
+          decoration: BoxDecoration(
+            border: Border.all(color: Colors.grey.shade400),
+            borderRadius: BorderRadius.circular(10),
+            color: Colors.grey.shade50,
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              if (isLoading)
+                const SizedBox(
+                  width: 28,
+                  height: 28,
+                  child: CircularProgressIndicator(strokeWidth: 3),
+                )
+              else
+                const Icon(
+                  Icons.photo_library_outlined,
+                  size: 30,
+                ),
+              const SizedBox(width: 12),
+              Flexible(
+                child: Text(
+                  isLoading
+                      ? 'جاري تحميل صور الرد${imageCount > 0 ? ' ($imageCount)' : ''}...'
+                      : 'عرض صور الرد${imageCount > 0 ? ' ($imageCount)' : ''}',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -1174,8 +1224,8 @@ if (answerImages.isNotEmpty)
       },
     );
   }
-	 void _showFullImage(String? imagePath) {
-	  showDialog(
+	 Future<void> _showFullImage(String? imagePath) async {
+	  await showDialog(
 		context: context,
 		builder: (_) => Dialog(
 		  backgroundColor: Colors.transparent,
