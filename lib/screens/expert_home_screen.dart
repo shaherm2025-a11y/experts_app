@@ -1587,11 +1587,13 @@ Widget _buildQuestionCard(
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
       ),
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
+      child: Directionality(
+        textDirection: TextDirection.rtl,
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
             // رقم المزارع في أعلى كل كرت.
             _buildFarmerHeader(q),
 
@@ -1671,7 +1673,8 @@ Widget _buildQuestionCard(
                       _showAnswerDialog(q),
                 ),
               ),
-          ],
+            ],
+          ),
         ),
       ),
     ),
