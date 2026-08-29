@@ -353,7 +353,7 @@ Future<String?> _ensureQuestionAudio(Map<String, dynamic> q) async {
   }
 
   final dir = await getApplicationDocumentsDirectory();
-  final filePath = '${dir.path}/q_$id.m4a';
+  final filePath = '${dir.path}/q_$id.mp3';
   final file = File(filePath);
 
   if (file.existsSync() && file.lengthSync() > 0) {
@@ -379,7 +379,7 @@ Future<String?> _ensureQuestionAudio(Map<String, dynamic> q) async {
   try {
     final path = await _downloadAndSaveFile(
       "${ApiService.baseUrl}/expert_question_audio/$id",
-      "q_$id.m4a",
+      "q_$id.mp3",
     );
 
     if (path != null && path.isNotEmpty) {
@@ -406,7 +406,7 @@ Future<String?> _ensureAnswerAudio(Map<String, dynamic> q) async {
   }
 
   final dir = await getApplicationDocumentsDirectory();
-  final filePath = '${dir.path}/a_$id.m4a';
+  final filePath = '${dir.path}/a_$id.mp3';
   final file = File(filePath);
 
   if (file.existsSync() && file.lengthSync() > 0) {
@@ -432,7 +432,7 @@ Future<String?> _ensureAnswerAudio(Map<String, dynamic> q) async {
   try {
     final path = await _downloadAndSaveFile(
       "${ApiService.baseUrl}/expert_answer_audio/$id",
-      "a_$id.m4a",
+      "a_$id.mp3",
     );
 
     if (path != null && path.isNotEmpty) {
