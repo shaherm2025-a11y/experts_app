@@ -1436,13 +1436,68 @@ Widget _buildAnswerAudioButton(Map<String, dynamic> q) {
   );
 }
 
-Widget _buildFarmerHeader(Map<String, dynamic> q) {
+String _relativeQuestionTime(dynamic value) {
+  if (value == null || value.toString().trim().isEmpty) {
+    return '';
+  }
+
+  final parsed = DateTime.tryParse(value.toString());
+  if (parsed == null) {
+    return '';
+  }
+
+  final now = DateTime.now();
+  final date = parsed.toLocal();
+  final difference = now.difference(date);
+
+  // في حال كان الوقت القادم بسبب اختلاف بسيط في الساعة.
+  if (difference.isNegative || difference.inSeconds < 60) {
+    return 'الآن';
+  }
+
+  final minutes = difference.inMinutes;
+  if (minutes < 60) {
+    if (minutes == 1) return 'قبل دقيقة';
+    if (minutes == 2) return 'قبل دقيقتين';
+    if (minutes >= 3 && minutes <= 10) return 'قبل $minutes دقائق';
+    return 'قبل $minutes دقيقة';
+  }
+
+  final hours = difference.inHours;
+  if (hours < 24) {
+    if (hours == 1) return 'قبل ساعة';
+    if (hours == 2) return 'قبل ساعتين';
+    if (hours >= 3 && hours <= 10) return 'قبل $hours ساعات';
+    return 'قبل $hours ساعة';
+  }
+
+  final days = difference.inDays;
+  if (days == 1) return 'قبل يوم';
+  if (days == 2) return 'قبل يومين';
+  if (days >= 3 && days <= 10) return 'قبل $days أيام';
+  if (days < 30) return 'قبل $days يوم';
+
+  final months = (days / 30).floor();
+  if (months == 1) return 'قبل شهر';
+  if (months == 2) return 'قبل شهرين';
+  if (months >= 3 && months <= 10) return 'قبل $months أشهر';
+  return 'قبل $months شهر';
+}
+
+Widget _buildFarmerHeader(
+  Map<String, dynamic> q, {
+  bool showRelativeTime = false,
+}) {
   final farmerId =
       q['farmer_id'] ?? q['farmerId'] ?? q['farmerID'];
 
   if (farmerId == null || '$farmerId'.trim().isEmpty) {
     return const SizedBox.shrink();
   }
+
+  final relativeTime = showRelativeTime
+      ? _relativeQuestionTime(q['question_date'])
+      : '';
 
   return Container(
     width: double.infinity,
@@ -1456,20 +1511,41 @@ Widget _buildFarmerHeader(Map<String, dynamic> q) {
       borderRadius: BorderRadius.circular(8),
     ),
     child: Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        const Icon(
-          Icons.person,
-          size: 22,
-          color: Colors.green,
-        ),
-        const SizedBox(width: 6),
-        Text(
-          'المزارع $farmerId',
-          style: const TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.bold,
-            color: Colors.green,
-          ),
+        // في RTL يظهر الوقت في الجهة اليسرى.
+        if (relativeTime.isNotEmpty)
+          Text(
+            relativeTime,
+            textDirection: TextDirection.rtl,
+            style: const TextStyle(
+              fontSize: 13,
+              color: Colors.grey,
+              fontWeight: FontWeight.w500,
+            ),
+          )
+        else
+          const SizedBox.shrink(),
+
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(
+              Icons.person,
+              size: 22,
+              color: Colors.green,
+            ),
+            const SizedBox(width: 6),
+            Text(
+              'المزارع $farmerId',
+              textDirection: TextDirection.rtl,
+              style: const TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+                color: Colors.green,
+              ),
+            ),
+          ],
         ),
       ],
     ),
@@ -1595,7 +1671,7 @@ Widget _buildQuestionCard(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
             // رقم المزارع في أعلى كل كرت.
-            _buildFarmerHeader(q),
+            _buildFarmerHeader(q, showRelativeTime: !answeredCard),
 
             if (quoteWidget != null) quoteWidget,
 
