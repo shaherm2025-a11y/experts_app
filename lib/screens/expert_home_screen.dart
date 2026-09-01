@@ -1440,13 +1440,24 @@ String _relativeQuestionTime(dynamic value) {
   if (value == null || value.toString().trim().isEmpty) {
     return '';
   }
+  print('value = $value');
 
   final parsed = DateTime.tryParse(value.toString());
+
+  print('parsed = $parsed');
+  print('now = ${DateTime.now()}');
+
+  final difference = DateTime.now().difference(parsed!);
+
+  print('minutes = ${difference.inMinutes}');
+  print('hours = ${difference.inHours}');
+
+  //final parsed = DateTime.tryParse(value.toString());
   if (parsed == null) {
     return '';
   }
 
-  final difference = DateTime.now().difference(parsed);
+ // final difference = DateTime.now().difference(parsed);
 
   // في حال كان الوقت القادم بسبب اختلاف بسيط في الساعة.
   if (difference.isNegative || difference.inSeconds < 60) {
