@@ -1446,9 +1446,7 @@ String _relativeQuestionTime(dynamic value) {
     return '';
   }
 
-  final now = DateTime.now();
-  final date = parsed.toLocal();
-  final difference = now.difference(date);
+  final difference = DateTime.now().difference(parsed);
 
   // في حال كان الوقت القادم بسبب اختلاف بسيط في الساعة.
   if (difference.isNegative || difference.inSeconds < 60) {
