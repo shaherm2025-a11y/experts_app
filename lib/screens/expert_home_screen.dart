@@ -1436,61 +1436,52 @@ Widget _buildAnswerAudioButton(Map<String, dynamic> q) {
   );
 }
 
-String _relativeQuestionTime(dynamic value) {
-  if (value == null || value.toString().trim().isEmpty) {
-    return '';
-  }
-  print('value = $value');
-
-  final parsed = DateTime.tryParse(value.toString());
-
-  print('parsed = $parsed');
-  print('now = ${DateTime.now()}');
-
-  final difference = DateTime.now().difference(parsed!);
-
-  print('minutes = ${difference.inMinutes}');
-  print('hours = ${difference.inHours}');
-
-  //final parsed = DateTime.tryParse(value.toString());
-  if (parsed == null) {
+String _relativeQuestionTime(String? dateString) {
+  if (dateString == null || dateString.isEmpty) {
     return '';
   }
 
- // final difference = DateTime.now().difference(parsed);
+  try {
+    final parsed = DateTime.parse(dateString);
 
-  // في حال كان الوقت القادم بسبب اختلاف بسيط في الساعة.
-  if (difference.isNegative || difference.inSeconds < 60) {
-    return 'الآن';
+    // وقت الجهاز + 3 ساعات
+    final now = DateTime.now().add(
+      const Duration(hours: 3),
+    );
+
+    final difference = now.difference(parsed);
+
+    debugPrint('question_date = $parsed');
+    debugPrint('now + 3 hours = $now');
+    debugPrint('minutes = ${difference.inMinutes}');
+    debugPrint('hours = ${difference.inHours}');
+
+    // إذا كان الفرق سالبًا بسبب اختلاف بسيط في الساعة
+    if (difference.isNegative) {
+      return 'الآن';
+    }
+
+    if (difference.inMinutes < 1) {
+      return 'الآن';
+    }
+
+    if (difference.inMinutes < 60) {
+      return 'قبل ${difference.inMinutes} دقيقة';
+    }
+
+    if (difference.inHours < 24) {
+      return 'قبل ${difference.inHours} ساعة';
+    }
+
+    if (difference.inDays == 1) {
+      return 'قبل يوم';
+    }
+
+    return 'قبل ${difference.inDays} يوم';
+  } catch (e) {
+    debugPrint('Relative time error: $e');
+    return '';
   }
-
-  final minutes = difference.inMinutes;
-  if (minutes < 60) {
-    if (minutes == 1) return 'قبل دقيقة';
-    if (minutes == 2) return 'قبل دقيقتين';
-    if (minutes >= 3 && minutes <= 10) return 'قبل $minutes دقائق';
-    return 'قبل $minutes دقيقة';
-  }
-
-  final hours = difference.inHours;
-  if (hours < 24) {
-    if (hours == 1) return 'قبل ساعة';
-    if (hours == 2) return 'قبل ساعتين';
-    if (hours >= 3 && hours <= 10) return 'قبل $hours ساعات';
-    return 'قبل $hours ساعة';
-  }
-
-  final days = difference.inDays;
-  if (days == 1) return 'قبل يوم';
-  if (days == 2) return 'قبل يومين';
-  if (days >= 3 && days <= 10) return 'قبل $days أيام';
-  if (days < 30) return 'قبل $days يوم';
-
-  final months = (days / 30).floor();
-  if (months == 1) return 'قبل شهر';
-  if (months == 2) return 'قبل شهرين';
-  if (months >= 3 && months <= 10) return 'قبل $months أشهر';
-  return 'قبل $months شهر';
 }
 
 Widget _buildFarmerHeader(
