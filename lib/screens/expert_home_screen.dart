@@ -804,6 +804,7 @@ Future<void> _showAnswerDialog(Map<String, dynamic> q) async {
     File? audioAnswerFile;
     Duration duration = Duration.zero;
 	List<File> answerImages = [];
+	
     final ImagePicker picker = ImagePicker();
 	
 //Future<void> pickImage() async {
@@ -931,7 +932,7 @@ Future<void> _showAnswerDialog(Map<String, dynamic> q) async {
            });
            }
           return AlertDialog(
-            title: const Text('الرد على الاستفسار'),
+            title: const Text('تعديل الرد'),
             content: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -943,7 +944,7 @@ Future<void> _showAnswerDialog(Map<String, dynamic> q) async {
                     border: OutlineInputBorder(),
                   ),
                 ),
-
+		
                 const SizedBox(height: 16),
 
                 // 🎤 التسجيل
@@ -1161,6 +1162,447 @@ if (answerImages.isNotEmpty)
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
                     content: Text('تم إرسال الرد بنجاح'),
+                  ),
+                );
+              }
+
+              if (context.mounted) {
+                Navigator.pop(context);
+              }
+
+              _loadQuestions();
+
+            } else {
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text(
+                      'تم حفظ الرد وسيتم إرساله لاحقاً',
+                    ),
+                  ),
+                );
+              }
+
+              if (context.mounted) {
+                Navigator.pop(context);
+              }
+
+              _loadQuestions();
+            }
+
+          } catch (e) {
+            debugPrint(
+              "Answer sending error: $e",
+            );
+
+            if (context.mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text(
+                    'حدث خطأ أثناء إرسال الرد',
+                  ),
+                ),
+              );
+            }
+
+            // نسمح بالمحاولة مرة أخرى فقط
+            setState(() {
+              isSending = false;
+            });
+          }
+        },
+  child: isSending
+      ? const SizedBox(
+          width: 22,
+          height: 22,
+          child: CircularProgressIndicator(
+            strokeWidth: 2,
+            color: Colors.white,
+          ),
+        )
+      : const Text('إرسال'),
+),
+            ],
+          );
+        });
+      },
+    );
+  }
+	
+Future<void> _showEditAnswerDialog(Map<String, dynamic> q) async {
+    TextEditingController answerController =
+        TextEditingController(text: q['answer'] ?? '');
+    bool isSending = false;
+    bool isRecording = false;
+    bool isPlaying = false;
+    File? audioAnswerFile;
+    Duration duration = Duration.zero;
+	List<File> existingImages = [];
+    List<File> newImages = [];
+
+    final savedImages =
+       await LocalDB.getAnswerImages(q['id']);
+
+    existingImages = savedImages
+     .where((e) => File(e).existsSync())
+     .map((e) => File(e))
+     .toList();
+    final ImagePicker picker = ImagePicker();
+	
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(builder: (context, setState) {
+		Future<void> pickImage() async {
+          try {
+           final picked = await picker.pickMultiImage(
+           imageQuality: 90,
+         );
+
+        if (picked.isEmpty) return;
+
+         setState(() {
+         newImages.addAll(
+         picked.map((e) => File(e.path)),
+         );
+        });
+       } catch (e) {
+       debugPrint("Image picker error: $e");
+
+       ScaffoldMessenger.of(context).showSnackBar(
+       const SnackBar(
+         content: Text('حدث خطأ أثناء اختيار الصور'),
+        ),
+       );
+      }
+     }
+
+		
+ Future<void> startRecording() async {
+   final hasPermission = await record.hasPermission();
+
+  if (!hasPermission) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('يرجى السماح بالميكروفون')),
+    );
+    return;
+  }
+
+  final dir = await getTemporaryDirectory();
+
+  final path =
+      '${dir.path}/answer_${DateTime.now().millisecondsSinceEpoch}.m4a';
+
+  try {
+    await record.start(
+      const RecordConfig(
+        encoder: AudioEncoder.aacLc,
+        bitRate: 128000,
+        sampleRate: 44100,
+      ),
+      path: path,
+    );
+
+    setState(() => isRecording = true);
+
+  } catch (e) {
+    debugPrint("Start recording error: $e");
+  }
+}
+
+ Future<void> stopRecording() async {
+  try {
+    final path = await record.stop();
+
+    if (path == null || path.isEmpty) {
+      setState(() => isRecording = false);
+      return;
+    }
+
+    final dir = await getApplicationDocumentsDirectory();
+    final savedPath =
+        '${dir.path}/answer_${q['id']}_${DateTime.now().millisecondsSinceEpoch}.m4a';
+
+    final savedFile = await File(path).copy(savedPath);
+
+    setState(() {
+      isRecording = false;
+      audioAnswerFile = savedFile;   // 🔥 مهم جداً داخل setState
+    });
+
+  } catch (e) {
+    setState(() => isRecording = false);
+  }
+}
+         Future<void> playAudio() async {
+           if (audioAnswerFile == null) return;
+
+            try {
+             await player.stop();
+             await player.play(DeviceFileSource(audioAnswerFile!.path));
+            } catch (e) {
+            debugPrint("Play error: $e");
+             }
+            }
+          void deleteAudio() {
+           if (audioAnswerFile != null &&
+            audioAnswerFile!.existsSync()) {
+            audioAnswerFile!.deleteSync();
+             }
+
+           setState(() {
+            audioAnswerFile = null;   // 🔥 داخل setState
+           });
+           }
+		  final allImages = [
+           ...existingImages,
+           ...newImages,
+          ]; 
+          return AlertDialog(
+            title: const Text('الرد على الاستفسار'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: answerController,
+                  maxLines: 3,
+                  decoration: const InputDecoration(
+                    hintText: 'اكتب ردك هنا...',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+
+                const SizedBox(height: 16),
+
+                // 🎤 التسجيل
+               Row(
+                 mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+             children: [
+
+            // 🎤 تسجيل صوت
+            ElevatedButton.icon(
+            icon: Icon(isRecording ? Icons.stop : Icons.mic),
+            label: Text(isRecording ? 'إيقاف' : 'تسجيل'),
+            style: ElevatedButton.styleFrom(
+            backgroundColor: isRecording ? Colors.red : Colors.green,
+            ),
+           onPressed: () async {
+           if (isRecording) {
+             await stopRecording();
+            } else {
+             await startRecording();
+            }
+           },
+          ),
+
+            // 🖼️ اختيار صورة
+           ElevatedButton.icon(
+           icon: const Icon(Icons.image),
+           label: const Text('صورة'),
+           style: ElevatedButton.styleFrom(
+           backgroundColor: Colors.blue,
+           ),
+           onPressed: pickImage,
+            ),
+           ],
+          ),
+		  //final allImages = [
+         //  ...existingImages,
+         //  ...newImages,
+         // ];
+           // عرض الصورة
+          // عرض الصور المختارة
+if (allImages.isNotEmpty)
+  Padding(
+    padding: const EdgeInsets.only(top: 12),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'الصور المختارة (${allImages.length})',
+          style: const TextStyle(
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+
+        const SizedBox(height: 8),
+
+        SizedBox(
+          height: 110,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            itemCount: allImages.length,
+            separatorBuilder: (_, __) =>
+                const SizedBox(width: 8),
+            itemBuilder: (context, index) {
+              final file = allImages[index];
+
+              return Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  GestureDetector(
+                    onTap: () {
+                      _showFullImage(file.path);
+                    },
+                    child: ClipRRect(
+                      borderRadius:
+                          BorderRadius.circular(10),
+                      child: Image.file(
+                        file,
+                        width: 100,
+                        height: 100,
+                        fit: BoxFit.cover,
+                      ),
+                    ),
+                  ),
+
+                  Positioned(
+                    top: -5,
+                    right: -5,
+                    child: GestureDetector(
+                      onTap: () {
+                        setState(() {
+                         if (index >= existingImages.length) {
+
+                           final newIndex =
+                           index - existingImages.length;
+
+                           newImages.removeAt(newIndex);
+
+                         }
+                        });
+                      },
+                      child: Container(
+                        width: 28,
+                        height: 28,
+                        decoration: const BoxDecoration(
+                          color: Colors.red,
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(
+                          Icons.close,
+                          color: Colors.white,
+                          size: 18,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
+        ),
+      ],
+    ),
+  ),            const SizedBox(height: 12),
+				
+
+                // ▶️ تشغيل / حذف
+                if (audioAnswerFile != null)
+                  Row(
+                    mainAxisAlignment:
+                        MainAxisAlignment.center,
+                    children: [
+                      IconButton(
+                        icon: Icon(isPlaying
+                            ? Icons.stop
+                            : Icons.play_arrow),
+                        onPressed: playAudio,
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.delete,
+                            color: Colors.red),
+                        onPressed: deleteAudio,
+                      ),
+                    ],
+                  ),
+              ],
+            ),
+
+            actions: [
+              TextButton(
+                child: const Text('إلغاء'),
+                onPressed: () => Navigator.pop(context),
+              ),
+
+            ElevatedButton(
+  onPressed: isSending
+      ? null
+      : () async {
+          setState(() {
+            isSending = true;
+          });
+
+          final answerText =
+              answerController.text.trim().isEmpty
+                  ? " "
+                  : answerController.text.trim();
+
+          final hasAudio = audioAnswerFile != null;
+          final hasImage =
+            existingImages.isNotEmpty ||
+            newImages.isNotEmpty;
+
+          if (answerText.trim().isEmpty &&
+              !hasAudio &&
+              !hasImage) {
+            setState(() {
+              isSending = false;
+            });
+
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text(
+                  'يرجى كتابة الرد أو تسجيل الصوت',
+                ),
+              ),
+            );
+            return;
+          }
+
+          try {
+            final audioPath = audioAnswerFile?.path;
+
+            await LocalDB.updateAnswer(
+              q['id'],
+              answerText,
+              audioPath,
+              widget.expertId,
+              isSynced: 0,
+            );
+
+         //   await LocalDB.clearAnswerImages(q['id']);
+
+            for (final image in newImages) {
+              await LocalDB.insertAnswerImage(
+                q['id'],
+                image.path,
+              );
+            }
+
+            final success =
+                await ApiService.editAnswer(
+              q['id'],
+              answerText,
+              widget.expertId,
+              audioFile: audioAnswerFile,
+              imageFiles: newImages,
+            );
+
+            if (success) {
+              await LocalDB.updateAnswer(
+                q['id'],
+                answerText,
+                audioPath,
+                widget.expertId,
+                isSynced: 1,
+              );
+
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('تم تعديل الرد بنجاح'),
                   ),
                 );
               }
@@ -1722,6 +2164,24 @@ Widget _buildQuestionCard(
                   color: Colors.grey,
                 ),
               ),
+			  
+			  const SizedBox(height: 8),
+
+if (q['expert_id'] == widget.expertId)
+  Align(
+    alignment: Alignment.centerLeft,
+    child: IconButton(
+      icon: const Icon(
+        Icons.edit,
+        color: Colors.orange,
+        size: 28,
+      ),
+      tooltip: 'تعديل الرد',
+      onPressed: () {
+        _showEditAnswerDialog(q);
+      },
+    ),
+  ),
 
               const SizedBox(height: 4),
 

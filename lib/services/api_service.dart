@@ -4,8 +4,8 @@ import '../models/expert.dart';
 import 'dart:io';
 
 class ApiService {
-   static const String baseUrl = "https://mohashaher-backend-supaspace.hf.space";
- // static const String baseUrl = "https://mohashaher-mobile-backend.hf.space";
+//   static const String baseUrl = "https://mohashaher-backend-supaspace.hf.space";
+ static const String baseUrl = "https://mohashaher-mobile-backend.hf.space";
   //static const String baseUrl = "https://mohashaher-plant-diag-final-server.hf.space";
  //static const String baseUrl = "http://localhost:8000";
 
@@ -162,6 +162,62 @@ static Future<bool> answerQuestion(
     }),
   );
   return response.statusCode == 200;
+}
+
+static Future<bool> editAnswer(
+  int questionId,
+  String answerText,
+  int expertId, {
+  File? audioFile,
+  List<File>? imageFiles,
+}) async {
+
+  try {
+
+    final request = http.MultipartRequest(
+      'PUT',
+      Uri.parse(
+        '$baseUrl/edit_answer/$questionId',
+      ),
+    );
+
+    request.fields['answer'] = answerText;
+    request.fields['expert_id'] =
+        expertId.toString();
+
+    if (audioFile != null &&
+        await audioFile.exists()) {
+
+      request.files.add(
+        await http.MultipartFile.fromPath(
+          'answer_audio',
+          audioFile.path,
+        ),
+      );
+    }
+
+    if (imageFiles != null) {
+      for (final image in imageFiles) {
+
+        request.files.add(
+          await http.MultipartFile.fromPath(
+            'answer_images',
+            image.path,
+          ),
+        );
+      }
+    }
+
+    final response = await request.send();
+
+    return response.statusCode == 200;
+
+  } catch (e) {
+
+    print(e);
+    return false;
+
+  }
 }
 
 static Future<void> saveFcmToken({
