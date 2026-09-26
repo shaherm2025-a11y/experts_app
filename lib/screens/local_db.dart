@@ -17,36 +17,54 @@ class LocalDB {
   // ===============================
   // ðŸ”¹ Ø¥Ù†Ø´Ø§Ø¡ Ù‚Ø§Ø¹Ø¯Ø© Ø§Ù„Ø¨ÙŠØ§Ù†Ø§Øª
   // ===============================
-  static Future<Database> _initDB() async {
-    final dbPath = await getDatabasesPath();
-    final path = join(dbPath, "expert_local.db");
+ static Future<Database> _initDB() async {
+  final dbPath = await getDatabasesPath();
+  final path = join(dbPath, "expert_local.db");
 
-    return await openDatabase(
-      path,
-      version: 3,
-      onCreate: _createDB,
-	onUpgrade: (db, oldVersion, newVersion) async {
+  return await openDatabase(
+    path,
+    version: 5,
+    onCreate: _createDB,
+    onUpgrade: (db, oldVersion, newVersion) async {
 
-    if (oldVersion < 2) {
-      await db.execute(
-        "ALTER TABLE questions ADD COLUMN parent_question_id INTEGER"
-      );
-    }
+      // Version 2
+      if (oldVersion < 2) {
+        await db.execute(
+          "ALTER TABLE questions ADD COLUMN parent_question_id INTEGER",
+        );
+      }
 
-  if (oldVersion < 3) {
+      // Version 3
+      if (oldVersion < 3) {
+        await db.execute('''
+          CREATE TABLE answer_images(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            question_id INTEGER,
+            image_path TEXT
+          )
+        ''');
+      }
 
-    await db.execute('''
-      CREATE TABLE answer_images(
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        question_id INTEGER,
-        image_path TEXT
-      )
-    ''');
+      // Version 4
+      if (oldVersion < 4) {
+        await db.execute(
+          "ALTER TABLE questions ADD COLUMN sync_type INTEGER DEFAULT 0",
+        );
+      }
 
-  }
+      // Version 5
+      if (oldVersion < 5) {
+        await db.execute(
+          "ALTER TABLE answer_images ADD COLUMN server_id INTEGER",
+        );
+
+        await db.execute(
+          "ALTER TABLE answer_images ADD COLUMN is_new INTEGER DEFAULT 0",
+        );
+      }
+    },
+  );
 }
-    );
-  }
 
   // ===============================
   // ðŸ”¹ Ø¥Ù†Ø´Ø§Ø¡ Ø¬Ø¯ÙˆÙ„ Ø§Ù„Ø£Ø³Ø¦Ù„Ø©
@@ -71,14 +89,17 @@ class LocalDB {
 	  question_has_audio INTEGER,
 	  answer_has_audio INTEGER,
 	  answer_has_image INTEGER,
-	  is_synced INTEGER DEFAULT 1
+	  is_synced INTEGER DEFAULT 1,
+	  sync_type INTEGER DEFAULT 0
     )
   ''');
   await db.execute('''
    CREATE TABLE answer_images(
    id INTEGER PRIMARY KEY AUTOINCREMENT,
    question_id INTEGER,
-   image_path TEXT
+   image_path TEXT,
+   server_id INTEGER,
+   is_new INTEGER DEFAULT 0
   )
   ''');
   
@@ -100,21 +121,110 @@ static Future<void> insertAnswerImage(
 }
 
 static Future<List<String>> getAnswerImages(
-    int questionId,
+  int questionId,
 ) async {
 
   final db = await database;
 
   final result = await db.query(
     "answer_images",
-    where: "question_id=?",
+    columns: ["image_path"],
+    where: "question_id = ?",
     whereArgs: [questionId],
+    orderBy: "id ASC",
   );
 
   return result
       .map((e) => e["image_path"] as String)
       .toList();
 }
+
+
+static Future<void> clearServerAnswerImages(
+  int questionId,
+) async {
+
+  final db = await database;
+
+  await db.delete(
+    "answer_images",
+    where: "question_id = ? AND is_new = 0",
+    whereArgs: [questionId],
+  );
+}
+
+static Future<int> insertNewAnswerImage(
+  int questionId,
+  String imagePath,
+) async {
+
+  final db = await database;
+
+  return await db.insert(
+    "answer_images",
+    {
+      "question_id": questionId,
+      "image_path": imagePath,
+      "server_id": null,
+      "is_new": 1,
+    },
+  );
+}
+
+static Future<int> insertServerAnswerImage({
+  required int questionId,
+  required String imagePath,
+  required int serverId,
+}) async {
+
+  final db = await database;
+
+  return await db.insert(
+    "answer_images",
+    {
+      "question_id": questionId,
+      "image_path": imagePath,
+      "server_id": serverId,
+      "is_new": 0,
+    },
+  );
+}
+
+static Future<List<String>> getNewAnswerImages(
+  int questionId,
+) async {
+
+  final db = await database;
+
+  final result = await db.query(
+    "answer_images",
+    columns: ["image_path"],
+    where: "question_id = ? AND is_new = 1",
+    whereArgs: [questionId],
+    orderBy: "id ASC",
+  );
+
+  return result
+      .map((e) => e["image_path"] as String)
+      .toList();
+}
+
+static Future<void> markImagesAsSynced(
+  int questionId,
+) async {
+
+  final db = await database;
+
+  await db.update(
+    "answer_images",
+    {
+      "is_new": 0,
+    },
+    where: "question_id = ? AND is_new = 1",
+    whereArgs: [questionId],
+  );
+}
+
 
 static Future<void> clearAnswerImages(
     int questionId,
@@ -202,9 +312,10 @@ static Future<void> insertOrUpdateQuestion(
   int id,
   String answer,
   String? audioPath,
-  int expertId,   // ? ÃÖÝ åÐÇ
-  {int isSynced = 0}
-) async {
+  int expertId, {
+  int isSynced = 0,
+}) async {
+
   final db = await database;
 
   await db.update(
@@ -213,15 +324,67 @@ static Future<void> insertOrUpdateQuestion(
       "answer": answer,
       "answer_audio_path": audioPath,
       "status": 1,
-      "expert_id": expertId,   // ? ãåã ÌÏÇð
+      "expert_id": expertId,
       "is_synced": isSynced,
-      "diagnosis_date": DateTime.now().toIso8601String(),
+
+      // ÑÏ ÌÏíÏ
+      "sync_type": isSynced == 1 ? 0 : 1,
+
+      "diagnosis_date":
+          DateTime.now().toIso8601String(),
+    },
+    where: "id = ?",
+    whereArgs: [id],
+  );
+} 
+
+static Future<void> updateEditedAnswer(
+  int id,
+  String answer,
+  String? audioPath,
+  int expertId, {
+  int isSynced = 0,
+}) async {
+
+  final db = await database;
+
+  await db.update(
+    "questions",
+    {
+      "answer": answer,
+      "answer_audio_path": audioPath,
+      "status": 1,
+      "expert_id": expertId,
+      "is_synced": isSynced,
+
+      // ÊÚÏíá ÑÏ ãæÌæÏ
+      "sync_type": isSynced == 1 ? 0 : 2,
+
+      "diagnosis_date":
+          DateTime.now().toIso8601String(),
     },
     where: "id = ?",
     whereArgs: [id],
   );
 }
-  
+
+
+static Future<void> markAnswerAsSynced(
+  int id,
+) async {
+
+  final db = await database;
+
+  await db.update(
+    "questions",
+    {
+      "is_synced": 1,
+      "sync_type": 0,
+    },
+    where: "id = ?",
+    whereArgs: [id],
+  );
+}
   static Future<List<Map<String, dynamic>>> getUnsyncedAnswers() async {
   final db = await database;
 

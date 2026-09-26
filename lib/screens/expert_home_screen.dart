@@ -30,6 +30,7 @@ class _ExpertHomeScreenState extends State<ExpertHomeScreen>
   List<Map<String, dynamic>> unanswered = [];
   List<Map<String, dynamic>> answered = [];
   bool loading = true;
+  bool _isSyncingAnswers = false;
   late TabController _tabController;
   final Map<int, GlobalKey> _questionKeys = {};
   final ScrollController _answeredScrollController =
@@ -59,7 +60,6 @@ class _ExpertHomeScreenState extends State<ExpertHomeScreen>
     syncUnsyncedAnswers();
 	//await FirebaseMessaging.instance.requestPermission();
 	 initFirebase();
-
     _timer = Timer.periodic(const Duration(minutes: 5), (_) {
       if (!mounted) return;
       _loadQuestions();
@@ -112,38 +112,157 @@ Future<String?> _downloadAndSaveFile(String url, String fileName) async {
   }
 }
 Future<void> syncUnsyncedAnswers() async {
-  final unsynced = await LocalDB.getUnsyncedAnswers();
 
-  for (var q in unsynced) {
-
-    final audioFile = q['answer_audio_path'] != null
-        ? File(q['answer_audio_path'])
-        : null;
-
-
-    final imageFiles = (await LocalDB.getAnswerImages(q["id"]))
-      .map((path) => File(path))
-      .toList();
-
-    final success = await ApiService.answerQuestion(
-      q['id'],
-      q['answer'] ?? "",
-      q['expert_id'],   // ✅ رقم الخبير الصحيح لكل رد
-      audioFile: audioFile,
-      imageFiles: imageFiles, // ✅ الجديد
+  // منع تشغيل مزامنتين في نفس الوقت
+  if (_isSyncingAnswers) {
+    debugPrint(
+      "Answer sync already running",
     );
+    return;
+  }
 
-    if (success) {
-      await LocalDB.updateAnswer(
-        q['id'],
-        q['answer'],
-        q['answer_audio_path'],
-        q['expert_id'],
-        isSynced: 1,
+  _isSyncingAnswers = true;
+
+  try {
+
+    final unsynced =
+        await LocalDB.getUnsyncedAnswers();
+
+    if (unsynced.isEmpty) {
+      return;
+    }
+
+    for (final q in unsynced) {
+
+      final questionId =
+          int.parse(q['id'].toString());
+
+      final expertId =
+          int.parse(q['expert_id'].toString());
+
+      final syncType =
+          int.tryParse(
+            "${q['sync_type'] ?? 1}",
+          ) ??
+          1;
+
+      bool success = false;
+
+      // ======================================
+      // الصوت
+      // ======================================
+
+      File? audioFile;
+
+      final audioPath =
+          q['answer_audio_path'];
+
+      if (audioPath != null &&
+          audioPath.toString().trim().isNotEmpty) {
+
+        final file =
+            File(audioPath.toString());
+
+        if (await file.exists()) {
+          audioFile = file;
+        }
+      }
+
+      // ======================================
+      // الصور الجديدة فقط
+      // ======================================
+
+      final newImagePaths =
+          await LocalDB.getNewAnswerImages(
+        questionId,
       );
 
-     
+      final List<File> newImageFiles = [];
+
+      for (final path in newImagePaths) {
+
+        final file = File(path);
+
+        if (await file.exists()) {
+          newImageFiles.add(file);
+        }
+      }
+
+      // ======================================
+      // رد جديد
+      // ======================================
+
+      if (syncType == 1) {
+
+        success =
+            await ApiService.answerQuestion(
+          questionId,
+          q['answer'] ?? "",
+          expertId,
+          audioFile: audioFile,
+          imageFiles: newImageFiles,
+        );
+      }
+
+      // ======================================
+      // تعديل
+      // ======================================
+
+      else if (syncType == 2) {
+
+        success =
+            await ApiService.editAnswer(
+          questionId,
+          q['answer'] ?? "",
+          expertId,
+          audioFile: audioFile,
+          imageFiles: newImageFiles,
+        );
+      }
+
+      // ======================================
+      // النجاح
+      // ======================================
+
+      if (success) {
+
+        await LocalDB.markImagesAsSynced(
+          questionId,
+        );
+
+        await LocalDB.markAnswerAsSynced(
+          questionId,
+        );
+
+        debugPrint(
+          "SYNC SUCCESS: $questionId",
+        );
+      }
+
+      // ======================================
+      // الفشل
+      // ======================================
+
+      else {
+
+        debugPrint(
+          "SYNC FAILED: $questionId",
+        );
+
+        // لا نغير الحالة.
+        // ستتم المحاولة في المزامنة القادمة.
+      }
     }
+
+  } catch (e) {
+
+    debugPrint(
+      "syncUnsyncedAnswers error: $e",
+    );
+
+  } finally {
+
+    _isSyncingAnswers = false;
   }
 }
 	Future<void> _loadQuestions() async {
@@ -182,6 +301,7 @@ Future<void> syncUnsyncedAnswers() async {
         "answer": q["answer"],
         "parent_question_id": q["parent_question_id"],
         "expert_name": q["expert_name"],
+		"expert_id": q["expert_id"],
         "status": q["status"],
         "question_date": q["question_date"],
         "diagnosis_date": q["diagnosis_date"],
@@ -569,38 +689,75 @@ Future<void> _openQuestionImage(Map<String, dynamic> q) async {
   }
 }
 
-Future<List<String>> _loadAnswerImagesOnDemand(int questionId, int expectedImageCount) async {
+Future<List<String>> _loadAnswerImagesOnDemand(
+  int questionId,
+  int expectedImageCount,
+) async {
   if (_answerImagesLoaded.contains(questionId)) {
     return _answerImagesCache[questionId] ?? <String>[];
   }
 
   if (_answerImagesLoading.contains(questionId)) {
     for (int i = 0; i < 150; i++) {
-      await Future.delayed(const Duration(milliseconds: 100));
-      if (!_answerImagesLoading.contains(questionId)) break;
+      await Future.delayed(
+        const Duration(milliseconds: 100),
+      );
+
+      if (!_answerImagesLoading.contains(questionId)) {
+        break;
+      }
     }
+
     return _answerImagesCache[questionId] ?? <String>[];
   }
 
   if (mounted) {
-    setState(() => _answerImagesLoading.add(questionId));
+    setState(() {
+      _answerImagesLoading.add(questionId);
+    });
   }
 
   try {
-    // إذا كانت الصور موجودة محلياً بالفعل، نستخدمها بدون اتصال.
-    final localImages = await LocalDB.getAnswerImages(questionId);
+    // =========================================================
+    // 1. قراءة جميع الصور الموجودة محلياً
+    // =========================================================
+
+    final localImages = await LocalDB.getAnswerImages(
+      questionId,
+    );
+
     final validLocalImages = localImages
-        .where((path) => File(path).existsSync() && File(path).lengthSync() > 0)
+        .where(
+          (path) =>
+              File(path).existsSync() &&
+              File(path).lengthSync() > 0,
+        )
         .toList();
+
+    // =========================================================
+    // 2. إذا كانت الصور المحلية كافية، نستخدمها بدون اتصال
+    // =========================================================
+
+    // ملاحظة:
+    // expectedImageCount يمثل صور السيرفر.
+    // لذلك لا نعتمد عليه وحده إذا كان لدينا صور جديدة
+    // محلية is_new = 1.
+    //
+    // إذا كان عدد الصور المحلية يساوي عدد الصور المتوقع
+    // ولا توجد حاجة للاتصال بالسيرفر، نستخدمها مباشرة.
 
     if (expectedImageCount > 0 &&
         validLocalImages.length == expectedImageCount) {
       _answerImagesCache[questionId] = validLocalImages;
       _answerImagesLoaded.add(questionId);
+
       return validLocalImages;
     }
 
-    // أول اتصال بالسيرفر يحدث فقط بعد ضغط المستخدم على الصور.
+    // =========================================================
+    // 3. تحميل صور الإجابة من السيرفر
+    // =========================================================
+
     final response = await http.get(
       Uri.parse(
         "${ApiService.baseUrl}/expert_answer_images/$questionId",
@@ -614,24 +771,40 @@ Future<List<String>> _loadAnswerImagesOnDemand(int questionId, int expectedImage
     }
 
     final decoded = jsonDecode(response.body);
+
     if (decoded is! List) {
-      throw Exception("Invalid answer images response");
+      throw Exception(
+        "Invalid answer images response",
+      );
     }
 
-    final downloadedPaths = <String>[];
+    // سنحتفظ بمسار الصورة + server_id
+    final downloadedImages =
+        <Map<String, dynamic>>[];
+
+    // =========================================================
+    // 4. تنزيل الصور الموجودة على السيرفر
+    // =========================================================
 
     for (final img in decoded) {
       final imageId = img["id"];
-      if (imageId == null) continue;
 
-      final dir = await getApplicationDocumentsDirectory();
+      if (imageId == null) {
+        continue;
+      }
+
+      final dir =
+          await getApplicationDocumentsDirectory();
+
       final filePath =
           '${dir.path}/answer_${questionId}_$imageId.jpg';
 
       final file = File(filePath);
 
       String? path;
-      if (file.existsSync() && file.lengthSync() > 0) {
+
+      if (file.existsSync() &&
+          file.lengthSync() > 0) {
         path = filePath;
       } else {
         path = await _downloadAndSaveFile(
@@ -641,28 +814,101 @@ Future<List<String>> _loadAnswerImagesOnDemand(int questionId, int expectedImage
       }
 
       if (path != null && path.isNotEmpty) {
-        downloadedPaths.add(path);
+        downloadedImages.add({
+          "path": path,
+          "server_id":
+              int.parse(imageId.toString()),
+        });
       }
     }
 
-    await LocalDB.clearAnswerImages(questionId);
+    // =========================================================
+    // 5. حذف صور السيرفر القديمة فقط
+    // =========================================================
 
-    for (final path in downloadedPaths) {
-      await LocalDB.insertAnswerImage(questionId, path);
+    // مهم جداً:
+    //
+    // لا نستخدم clearAnswerImages()
+    //
+    // لأن ذلك قد يحذف الصور الجديدة التي أضافها الخبير
+    // ولم تتم مزامنتها بعد.
+    //
+    // clearServerAnswerImages() يحذف فقط:
+    // is_new = 0
+    //
+    // ويترك:
+    // is_new = 1
+
+    await LocalDB.clearServerAnswerImages(
+      questionId,
+    );
+
+    // =========================================================
+    // 6. حفظ صور السيرفر في قاعدة البيانات
+    // =========================================================
+
+    for (final image in downloadedImages) {
+      final path = image["path"] as String;
+      final serverId = image["server_id"] as int;
+
+      await LocalDB.insertServerAnswerImage(
+        questionId: questionId,
+        imagePath: path,
+        serverId: serverId,
+      );
     }
 
-    _answerImagesCache[questionId] = downloadedPaths;
+    // =========================================================
+    // 7. إعادة قراءة جميع الصور المحلية
+    // =========================================================
+    //
+    // هذه الخطوة مهمة جداً.
+    //
+    // لأنها تجمع:
+    //
+    //   صور السيرفر القديمة
+    //          +
+    //   الصور الجديدة المحلية is_new = 1
+    //
+    // وبالتالي لا تختفي الصور الجديدة من الواجهة.
+
+    final allLocalImages =
+        await LocalDB.getAnswerImages(
+      questionId,
+    );
+
+    final validAllImages = allLocalImages
+        .where(
+          (path) =>
+              File(path).existsSync() &&
+              File(path).lengthSync() > 0,
+        )
+        .toList();
+
+    // =========================================================
+    // 8. تحديث الكاش
+    // =========================================================
+
+    _answerImagesCache[questionId] =
+        validAllImages;
+
     _answerImagesLoaded.add(questionId);
 
-    return downloadedPaths;
+    return validAllImages;
   } catch (e) {
     debugPrint(
       "Lazy answer images error for $questionId: $e",
     );
-    return _answerImagesCache[questionId] ?? <String>[];
+
+    // في حالة عدم وجود اتصال بالسيرفر أو حدوث خطأ،
+    // نعيد الصور الموجودة محلياً.
+    return _answerImagesCache[questionId] ??
+        await LocalDB.getAnswerImages(questionId);
   } finally {
     if (mounted) {
-      setState(() => _answerImagesLoading.remove(questionId));
+      setState(() {
+        _answerImagesLoading.remove(questionId);
+      });
     }
   }
 }
@@ -1120,77 +1366,140 @@ if (answerImages.isNotEmpty)
             return;
           }
 
-          try {
-            final audioPath = audioAnswerFile?.path;
+      
+ try {
+   final audioPath = audioAnswerFile?.path;
 
-            await LocalDB.updateAnswer(
-              q['id'],
-              answerText,
-              audioPath,
-              widget.expertId,
-              isSynced: 0,
-            );
+  // =========================================================
+  // 1. حفظ الرد محلياً أولاً
+  // =========================================================
+  //
+  // sync_type = 1 لأن هذه إجابة جديدة
+  //
+   await LocalDB.updateAnswer(
+     q['id'],
+     answerText,
+     audioPath,
+     widget.expertId,
+     isSynced: 0,
+   );
 
-            await LocalDB.clearAnswerImages(q['id']);
+  // =========================================================
+  // 2. حفظ الصور الجديدة محلياً
+  // =========================================================
+  //
+  // لا نستخدم clearAnswerImages()
+  // ولا insertAnswerImage()
+  //
+  // لأن هذه الصور جديدة وسيتم رفعها إلى السيرفر.
+  //
+  for (final image in answerImages) {
+    await LocalDB.insertNewAnswerImage(
+      q['id'],
+      image.path,
+    );
+  }
 
-            for (final image in answerImages) {
-              await LocalDB.insertAnswerImage(
-                q['id'],
-                image.path,
-              );
-            }
+  // =========================================================
+  // 3. محاولة إرسال الرد مباشرة إلى السيرفر
+  // =========================================================
 
-            final success =
-                await ApiService.answerQuestion(
-              q['id'],
-              answerText,
-              widget.expertId,
-              audioFile: audioAnswerFile,
-              imageFiles: answerImages,
-            );
+  final success = await ApiService.answerQuestion(
+    q['id'],
+    answerText,
+    widget.expertId,
+    audioFile: audioAnswerFile,
+    imageFiles: answerImages,
+  );
 
-            if (success) {
-              await LocalDB.updateAnswer(
-                q['id'],
-                answerText,
-                audioPath,
-                widget.expertId,
-                isSynced: 1,
-              );
+  // =========================================================
+  // 4. إذا نجح الإرسال
+  // =========================================================
 
-              if (context.mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('تم إرسال الرد بنجاح'),
-                  ),
-                );
-              }
+  if (success) {
+    // الصور الجديدة أصبحت موجودة على السيرفر
+    await LocalDB.markImagesAsSynced(
+      q['id'],
+    );
 
-              if (context.mounted) {
-                Navigator.pop(context);
-              }
+    // الرد أصبح متزامناً
+    await LocalDB.markAnswerAsSynced(
+      q['id'],
+    );
 
-              _loadQuestions();
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'تم إرسال الرد بنجاح',
+          ),
+        ),
+      );
+    }
 
-            } else {
-              if (context.mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text(
-                      'تم حفظ الرد وسيتم إرساله لاحقاً',
-                    ),
-                  ),
-                );
-              }
+    if (context.mounted) {
+      Navigator.pop(context);
+    }
 
-              if (context.mounted) {
-                Navigator.pop(context);
-              }
+    _loadQuestions();
 
-              _loadQuestions();
-            }
+  } else {
+    // =======================================================
+    // فشل الإرسال
+    // =======================================================
+    //
+    // لا نغير حالة المزامنة.
+    //
+    // سيبقى:
+    //
+    // is_synced = 0
+    // sync_type = 1
+    // الصور الجديدة is_new = 1
+    //
+    // وستقوم syncUnsyncedAnswers()
+    // بإرسالها لاحقاً.
+    //
 
-          } catch (e) {
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'تم حفظ الرد وسيتم إرساله لاحقاً',
+          ),
+        ),
+      );
+    }
+
+    if (context.mounted) {
+      Navigator.pop(context);
+    }
+
+    _loadQuestions();
+  }
+
+} catch (e) {
+  debugPrint(
+    "Send answer error: $e",
+  );
+
+  if (context.mounted) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text(
+          'تم حفظ الرد وسيتم إرساله لاحقاً',
+        ),
+      ),
+    );
+  }
+
+  if (context.mounted) {
+    Navigator.pop(context);
+  }
+
+  _loadQuestions();
+}
+
+		  catch (e) {
             debugPrint(
               "Answer sending error: $e",
             );
@@ -1561,77 +1870,84 @@ if (allImages.isNotEmpty)
             return;
           }
 
-          try {
-            final audioPath = audioAnswerFile?.path;
+          
+try {
+  final audioPath = audioAnswerFile?.path;
 
-            await LocalDB.updateAnswer(
-              q['id'],
-              answerText,
-              audioPath,
-              widget.expertId,
-              isSynced: 0,
-            );
+  // حفظ التعديل محلياً أولاً
+  // sync_type = 2 لأن العملية عبارة عن تعديل رد موجود
+  await LocalDB.updateEditedAnswer(
+    q['id'],
+    answerText,
+    audioPath,
+    widget.expertId,
+    isSynced: 0,
+  );
 
-         //   await LocalDB.clearAnswerImages(q['id']);
+  // حفظ الصور الجديدة فقط
+  // الصور القديمة الموجودة على السيرفر لا نحذفها
+  for (final image in newImages) {
+    await LocalDB.insertNewAnswerImage(
+      q['id'],
+      image.path,
+    );
+  }
 
-            for (final image in newImages) {
-              await LocalDB.insertAnswerImage(
-                q['id'],
-                image.path,
-              );
-            }
+  // محاولة إرسال التعديل مباشرة إلى السيرفر
+  final success = await ApiService.editAnswer(
+    q['id'],
+    answerText,
+    widget.expertId,
+    audioFile: audioAnswerFile,
+    imageFiles: newImages,
+  );
 
-            final success =
-                await ApiService.editAnswer(
-              q['id'],
-              answerText,
-              widget.expertId,
-              audioFile: audioAnswerFile,
-              imageFiles: newImages,
-            );
+  if (success) {
+    // الصور الجديدة أصبحت موجودة على السيرفر
+    await LocalDB.markImagesAsSynced(q['id']);
 
-            if (success) {
-              await LocalDB.updateAnswer(
-                q['id'],
-                answerText,
-                audioPath,
-                widget.expertId,
-                isSynced: 1,
-              );
+    // الرد أصبح متزامناً
+    await LocalDB.markAnswerAsSynced(q['id']);
 
-              if (context.mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('تم تعديل الرد بنجاح'),
-                  ),
-                );
-              }
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('تم تعديل الرد بنجاح'),
+        ),
+      );
+    }
 
-              if (context.mounted) {
-                Navigator.pop(context);
-              }
+    if (context.mounted) {
+      Navigator.pop(context);
+    }
 
-              _loadQuestions();
+    _loadQuestions();
+  } else {
+    // لا نغير حالة المزامنة.
+    // سيبقى:
+    // is_synced = 0
+    // sync_type = 2
+    // والصور الجديدة is_new = 1
+    // حتى تقوم المزامنة بإرسالها لاحقاً.
 
-            } else {
-              if (context.mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text(
-                      'تم حفظ الرد وسيتم إرساله لاحقاً',
-                    ),
-                  ),
-                );
-              }
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'تم حفظ التعديل وسيتم إرساله لاحقاً',
+          ),
+        ),
+      );
+    }
 
-              if (context.mounted) {
-                Navigator.pop(context);
-              }
+    if (context.mounted) {
+      Navigator.pop(context);
+    }
 
-              _loadQuestions();
-            }
-
-          } catch (e) {
+    _loadQuestions();
+  }
+}
+ catch (e) {
             debugPrint(
               "Answer sending error: $e",
             );

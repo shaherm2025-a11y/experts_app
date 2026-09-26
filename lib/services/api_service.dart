@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../models/expert.dart';
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 
 class ApiService {
 //   static const String baseUrl = "https://mohashaher-backend-supaspace.hf.space";
@@ -163,7 +164,6 @@ static Future<bool> answerQuestion(
   );
   return response.statusCode == 200;
 }
-
 static Future<bool> editAnswer(
   int questionId,
   String answerText,
@@ -181,10 +181,13 @@ static Future<bool> editAnswer(
       ),
     );
 
-    request.fields['answer'] = answerText;
+    request.fields['answer'] =
+        answerText;
+
     request.fields['expert_id'] =
         expertId.toString();
 
+    // صوت جديد فقط إذا سجله المستخدم
     if (audioFile != null &&
         await audioFile.exists()) {
 
@@ -196,8 +199,14 @@ static Future<bool> editAnswer(
       );
     }
 
+    // الصور الجديدة فقط
     if (imageFiles != null) {
+
       for (final image in imageFiles) {
+
+        if (!await image.exists()) {
+          continue;
+        }
 
         request.files.add(
           await http.MultipartFile.fromPath(
@@ -208,18 +217,33 @@ static Future<bool> editAnswer(
       }
     }
 
-    final response = await request.send();
+    final response =
+        await request.send();
+
+    final body =
+        await response.stream
+            .bytesToString();
+
+    debugPrint(
+      "EDIT STATUS: "
+      "${response.statusCode}",
+    );
+
+    debugPrint(
+      "EDIT RESPONSE: $body",
+    );
 
     return response.statusCode == 200;
 
   } catch (e) {
 
-    print(e);
-    return false;
+    debugPrint(
+      "editAnswer error: $e",
+    );
 
+    return false;
   }
 }
-
 static Future<void> saveFcmToken({
   required int userId,
   required String role,
