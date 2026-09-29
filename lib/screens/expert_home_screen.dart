@@ -1538,453 +1538,873 @@ if (answerImages.isNotEmpty)
     );
   }
 	
-Future<void> _showEditAnswerDialog(Map<String, dynamic> q) async {
-    TextEditingController answerController =
-        TextEditingController(text: q['answer'] ?? '');
-    bool isSending = false;
-    bool isRecording = false;
-    bool isPlaying = false;
-    File? audioAnswerFile;
-    Duration duration = Duration.zero;
-	List<File> existingImages = [];
-    List<File> newImages = [];
+	
+Future<void> _showEditAnswerDialog(
+  Map<String, dynamic> q,
+) async {
+  debugPrint("=================================");
+  debugPrint("EDIT BUTTON CLICKED");
+  debugPrint("QUESTION ID: ${q['id']}");
+  debugPrint("=================================");
+
+  final TextEditingController answerController =
+      TextEditingController(
+    text: q['answer'] ?? '',
+  );
+
+  bool isSending = false;
+  bool isRecording = false;
+  bool isPlaying = false;
+
+  File? audioAnswerFile;
+
+  List<File> existingImages = [];
+  List<File> newImages = [];
+
+  final ImagePicker picker = ImagePicker();
+
+  // =========================================================
+  // تحميل الصور الموجودة محلياً
+  // =========================================================
+
+  try {
+    debugPrint("LOADING EXISTING ANSWER IMAGES...");
 
     final savedImages =
-       await LocalDB.getAnswerImages(q['id']);
+        await LocalDB.getAnswerImages(q['id']);
+
+    debugPrint(
+      "SAVED ANSWER IMAGES: ${savedImages.length}",
+    );
 
     existingImages = savedImages
-     .where((e) => File(e).existsSync())
-     .map((e) => File(e))
-     .toList();
-    final ImagePicker picker = ImagePicker();
-	
+        .where(
+          (path) =>
+              File(path).existsSync() &&
+              File(path).lengthSync() > 0,
+        )
+        .map(
+          (path) => File(path),
+        )
+        .toList();
 
-    showDialog(
-      context: context,
-      builder: (context) {
-        return StatefulBuilder(builder: (context, setState) {
-		Future<void> pickImage() async {
-          try {
-           final picked = await picker.pickMultiImage(
-           imageQuality: 90,
-         );
+    debugPrint(
+      "VALID EXISTING IMAGES: "
+      "${existingImages.length}",
+    );
+  } catch (e, stackTrace) {
+    debugPrint(
+      "GET ANSWER IMAGES ERROR: $e",
+    );
 
-        if (picked.isEmpty) return;
+    debugPrint(
+      stackTrace.toString(),
+    );
 
-         setState(() {
-         newImages.addAll(
-         picked.map((e) => File(e.path)),
-         );
-        });
-       } catch (e) {
-       debugPrint("Image picker error: $e");
+    // لا نمنع فتح نافذة التعديل
+    existingImages = [];
+  }
 
-       ScaffoldMessenger.of(context).showSnackBar(
-       const SnackBar(
-         content: Text('حدث خطأ أثناء اختيار الصور'),
-        ),
-       );
+  // =========================================================
+  // اختيار صور جديدة
+  // =========================================================
+
+  Future<void> pickImage(
+    StateSetter setState,
+  ) async {
+    try {
+      final picked =
+          await picker.pickMultiImage(
+        imageQuality: 90,
+      );
+
+      if (picked.isEmpty) {
+        return;
       }
-     }
 
-		
- Future<void> startRecording() async {
-   final hasPermission = await record.hasPermission();
+      final selectedFiles = <File>[];
 
-  if (!hasPermission) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('يرجى السماح بالميكروفون')),
-    );
-    return;
+      for (final image in picked) {
+        final file = File(image.path);
+
+        if (await file.exists()) {
+          final size = await file.length();
+
+          if (size > 0) {
+            selectedFiles.add(file);
+          }
+        }
+      }
+
+      if (selectedFiles.isEmpty) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'تعذر قراءة الصور المختارة',
+              ),
+            ),
+          );
+        }
+
+        return;
+      }
+
+      setState(() {
+        newImages.addAll(selectedFiles);
+      });
+
+      debugPrint(
+        "NEW IMAGES SELECTED: "
+        "${selectedFiles.length}",
+      );
+
+      debugPrint(
+        "TOTAL NEW IMAGES: "
+        "${newImages.length}",
+      );
+    } catch (e) {
+      debugPrint(
+        "IMAGE PICKER ERROR: $e",
+      );
+
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'حدث خطأ أثناء اختيار الصور',
+            ),
+          ),
+        );
+      }
+    }
   }
 
-  final dir = await getTemporaryDirectory();
+  // =========================================================
+  // بدء تسجيل الصوت
+  // =========================================================
 
-  final path =
-      '${dir.path}/answer_${DateTime.now().millisecondsSinceEpoch}.m4a';
+  Future<void> startRecording(
+    StateSetter setState,
+  ) async {
+    try {
+      final hasPermission =
+          await record.hasPermission();
 
-  try {
-    await record.start(
-      const RecordConfig(
-        encoder: AudioEncoder.aacLc,
-        bitRate: 128000,
-        sampleRate: 44100,
-      ),
-      path: path,
-    );
+      if (!hasPermission) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'يرجى السماح بالميكروفون',
+              ),
+            ),
+          );
+        }
 
-    setState(() => isRecording = true);
+        return;
+      }
 
-  } catch (e) {
-    debugPrint("Start recording error: $e");
+      final dir =
+          await getTemporaryDirectory();
+
+      final path =
+          '${dir.path}/answer_${q['id']}_${DateTime.now().millisecondsSinceEpoch}.m4a';
+
+      await record.start(
+        const RecordConfig(
+          encoder: AudioEncoder.aacLc,
+          bitRate: 128000,
+          sampleRate: 44100,
+        ),
+        path: path,
+      );
+
+      setState(() {
+        isRecording = true;
+      });
+
+      debugPrint(
+        "RECORDING STARTED: $path",
+      );
+    } catch (e) {
+      debugPrint(
+        "START RECORDING ERROR: $e",
+      );
+
+      setState(() {
+        isRecording = false;
+      });
+
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'حدث خطأ أثناء بدء التسجيل',
+            ),
+          ),
+        );
+      }
+    }
   }
-}
 
- Future<void> stopRecording() async {
-  try {
-    final path = await record.stop();
+  // =========================================================
+  // إيقاف التسجيل وحفظ الملف
+  // =========================================================
 
-    if (path == null || path.isEmpty) {
-      setState(() => isRecording = false);
+  Future<void> stopRecording(
+    StateSetter setState,
+  ) async {
+    try {
+      final path = await record.stop();
+
+      setState(() {
+        isRecording = false;
+      });
+
+      if (path == null || path.isEmpty) {
+        debugPrint(
+          "RECORDING STOPPED WITHOUT FILE",
+        );
+        return;
+      }
+
+      final recordedFile = File(path);
+
+      if (!await recordedFile.exists()) {
+        debugPrint(
+          "RECORDED FILE DOES NOT EXIST",
+        );
+        return;
+      }
+
+      final dir =
+          await getApplicationDocumentsDirectory();
+
+      final savedPath =
+          '${dir.path}/answer_${q['id']}_${DateTime.now().millisecondsSinceEpoch}.m4a';
+
+      final savedFile =
+          await recordedFile.copy(savedPath);
+
+      setState(() {
+        audioAnswerFile = savedFile;
+      });
+
+      debugPrint(
+        "AUDIO SAVED: ${savedFile.path}",
+      );
+    } catch (e) {
+      debugPrint(
+        "STOP RECORDING ERROR: $e",
+      );
+
+      setState(() {
+        isRecording = false;
+      });
+
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'حدث خطأ أثناء حفظ التسجيل',
+            ),
+          ),
+        );
+      }
+    }
+  }
+
+  // =========================================================
+  // تشغيل الصوت الجديد
+  // =========================================================
+
+  Future<void> playAudio(
+    StateSetter setState,
+  ) async {
+    if (audioAnswerFile == null) {
       return;
     }
 
-    final dir = await getApplicationDocumentsDirectory();
-    final savedPath =
-        '${dir.path}/answer_${q['id']}_${DateTime.now().millisecondsSinceEpoch}.m4a';
+    try {
+      if (!await audioAnswerFile!.exists()) {
+        return;
+      }
 
-    final savedFile = await File(path).copy(savedPath);
+      await player.stop();
+
+      setState(() {
+        isPlaying = true;
+      });
+
+      await player.play(
+        DeviceFileSource(
+          audioAnswerFile!.path,
+        ),
+      );
+    } catch (e) {
+      debugPrint(
+        "PLAY AUDIO ERROR: $e",
+      );
+
+      setState(() {
+        isPlaying = false;
+      });
+    }
+  }
+
+  // =========================================================
+  // حذف التسجيل الجديد
+  // =========================================================
+
+  Future<void> deleteAudio(
+    StateSetter setState,
+  ) async {
+    try {
+      if (audioAnswerFile != null &&
+          await audioAnswerFile!.exists()) {
+        await audioAnswerFile!.delete();
+      }
+    } catch (e) {
+      debugPrint(
+        "DELETE AUDIO ERROR: $e",
+      );
+    }
 
     setState(() {
-      isRecording = false;
-      audioAnswerFile = savedFile;   // 🔥 مهم جداً داخل setState
+      audioAnswerFile = null;
+      isPlaying = false;
     });
-
-  } catch (e) {
-    setState(() => isRecording = false);
   }
-}
-         Future<void> playAudio() async {
-           if (audioAnswerFile == null) return;
 
-            try {
-             await player.stop();
-             await player.play(DeviceFileSource(audioAnswerFile!.path));
-            } catch (e) {
-            debugPrint("Play error: $e");
-             }
-            }
-          void deleteAudio() {
-           if (audioAnswerFile != null &&
-            audioAnswerFile!.existsSync()) {
-            audioAnswerFile!.deleteSync();
-             }
+  // =========================================================
+  // فتح النافذة
+  // =========================================================
 
-           setState(() {
-            audioAnswerFile = null;   // 🔥 داخل setState
-           });
-           }
-		  final allImages = [
-           ...existingImages,
-           ...newImages,
-          ]; 
-          return AlertDialog(
-            title: const Text('الرد على الاستفسار'),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextField(
-                  controller: answerController,
-                  maxLines: 3,
-                  decoration: const InputDecoration(
-                    hintText: 'اكتب ردك هنا...',
-                    border: OutlineInputBorder(),
+  if (!mounted) {
+    return;
+  }
+
+  debugPrint(
+    "BEFORE SHOW EDIT DIALOG",
+  );
+
+  final editResult = await showDialog<bool>(
+  context: context,
+  barrierDismissible: false,
+  builder: (dialogContext) {
+    return StatefulBuilder(
+      builder: (
+        dialogContext,
+        setState,
+      ) {
+          final allImages = [
+            ...existingImages,
+            ...newImages,
+          ];
+return AlertDialog(
+  title: const Text(
+    'تعديل الرد',
+  ),
+
+  content: SizedBox(
+    width: MediaQuery.of(context).size.width * 0.85,
+    height: MediaQuery.of(context).size.height * 0.55,
+
+    child: SingleChildScrollView(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+
+          // =========================================
+          // نص الرد
+          // =========================================
+
+          TextField(
+            controller: answerController,
+            maxLines: 4,
+            decoration: const InputDecoration(
+              hintText: 'اكتب ردك هنا...',
+              border: OutlineInputBorder(),
+            ),
+          ),
+
+          const SizedBox(height: 16),
+
+          // =========================================
+          // أزرار الصوت والصورة
+          // =========================================
+
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            children: [
+
+              ElevatedButton.icon(
+                icon: Icon(
+                  isRecording
+                      ? Icons.stop
+                      : Icons.mic,
+                ),
+                label: Text(
+                  isRecording
+                      ? 'إيقاف'
+                      : 'تسجيل',
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor:
+                      isRecording
+                          ? Colors.red
+                          : Colors.green,
+                  foregroundColor: Colors.white,
+                ),
+                onPressed: () async {
+                  if (isRecording) {
+                    await stopRecording(
+                      setState,
+                    );
+                  } else {
+                    await startRecording(
+                      setState,
+                    );
+                  }
+                },
+              ),
+
+              ElevatedButton.icon(
+                icon: const Icon(
+                  Icons.image,
+                ),
+                label: const Text(
+                  'صورة',
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor:
+                      Colors.blue,
+                  foregroundColor:
+                      Colors.white,
+                ),
+                onPressed: () async {
+                  await pickImage(
+                    setState,
+                  );
+                },
+              ),
+            ],
+          ),
+
+          // =========================================
+          // الصور
+          // =========================================
+if (allImages.isNotEmpty) ...[
+  const SizedBox(height: 10),
+
+  const Text(
+    'صور الرد:',
+    style: TextStyle(
+      fontWeight: FontWeight.bold,
+    ),
+  ),
+
+  const SizedBox(height: 8),
+
+  Wrap(
+    spacing: 8,
+    runSpacing: 8,
+    children: [
+      for (int i = 0; i < allImages.length; i++)
+        Stack(
+          children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: Image.file(
+                allImages[i],
+                width: 90,
+                height: 90,
+                fit: BoxFit.cover,
+              ),
+            ),
+
+            // زر الحذف للصور الجديدة فقط
+            if (i >= existingImages.length)
+              Positioned(
+                top: 2,
+                right: 2,
+                child: GestureDetector(
+                  onTap: () {
+                 final newIndex = i - existingImages.length;
+
+                 if (newIndex >= 0 &&
+                  newIndex < newImages.length) {
+                  setState(() {
+                  newImages.removeAt(newIndex);
+                  });
+                  }
+                 },
+                  child: Container(
+                    width: 24,
+                    height: 24,
+                    decoration: const BoxDecoration(
+                      color: Colors.red,
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.close,
+                      color: Colors.white,
+                      size: 16,
+                    ),
                   ),
                 ),
-
-                const SizedBox(height: 16),
-
-                // 🎤 التسجيل
-               Row(
-                 mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-             children: [
-
-            // 🎤 تسجيل صوت
-            ElevatedButton.icon(
-            icon: Icon(isRecording ? Icons.stop : Icons.mic),
-            label: Text(isRecording ? 'إيقاف' : 'تسجيل'),
-            style: ElevatedButton.styleFrom(
-            backgroundColor: isRecording ? Colors.red : Colors.green,
-            ),
-           onPressed: () async {
-           if (isRecording) {
-             await stopRecording();
-            } else {
-             await startRecording();
-            }
-           },
-          ),
-
-            // 🖼️ اختيار صورة
-           ElevatedButton.icon(
-           icon: const Icon(Icons.image),
-           label: const Text('صورة'),
-           style: ElevatedButton.styleFrom(
-           backgroundColor: Colors.blue,
-           ),
-           onPressed: pickImage,
-            ),
-           ],
-          ),
-		  //final allImages = [
-         //  ...existingImages,
-         //  ...newImages,
-         // ];
-           // عرض الصورة
-          // عرض الصور المختارة
-if (allImages.isNotEmpty)
-  Padding(
-    padding: const EdgeInsets.only(top: 12),
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          'الصور المختارة (${allImages.length})',
-          style: const TextStyle(
-            fontWeight: FontWeight.bold,
-          ),
+              ),
+          ],
         ),
+    ],
+  ),
+],
+          // =========================================
+          // الصوت الجديد
+          // =========================================
 
-        const SizedBox(height: 8),
-
-        SizedBox(
-          height: 110,
-          child: ListView.separated(
-            scrollDirection: Axis.horizontal,
-            itemCount: allImages.length,
-            separatorBuilder: (_, __) =>
-                const SizedBox(width: 8),
-            itemBuilder: (context, index) {
-              final file = allImages[index];
-
-              return Stack(
-                clipBehavior: Clip.none,
+          if (audioAnswerFile != null)
+            Padding(
+              padding:
+                  const EdgeInsets.only(
+                top: 16,
+              ),
+              child: Row(
+                mainAxisAlignment:
+                    MainAxisAlignment.center,
                 children: [
-                  GestureDetector(
-                    onTap: () {
-                      _showFullImage(file.path);
-                    },
-                    child: ClipRRect(
-                      borderRadius:
-                          BorderRadius.circular(10),
-                      child: Image.file(
-                        file,
-                        width: 100,
-                        height: 100,
-                        fit: BoxFit.cover,
-                      ),
+
+                  IconButton(
+                    icon: Icon(
+                      isPlaying
+                          ? Icons.stop
+                          : Icons.play_arrow,
                     ),
+                    onPressed: () async {
+                      if (isPlaying) {
+                        await player.stop();
+
+                        setState(() {
+                          isPlaying =
+                              false;
+                        });
+                      } else {
+                        await playAudio(
+                          setState,
+                        );
+                      }
+                    },
                   ),
 
-                  Positioned(
-                    top: -5,
-                    right: -5,
-                    child: GestureDetector(
-                      onTap: () {
-                        setState(() {
-                         if (index >= existingImages.length) {
-
-                           final newIndex =
-                           index - existingImages.length;
-
-                           newImages.removeAt(newIndex);
-
-                         }
-                        });
-                      },
-                      child: Container(
-                        width: 28,
-                        height: 28,
-                        decoration: const BoxDecoration(
-                          color: Colors.red,
-                          shape: BoxShape.circle,
-                        ),
-                        child: const Icon(
-                          Icons.close,
-                          color: Colors.white,
-                          size: 18,
-                        ),
-                      ),
+                  IconButton(
+                    icon: const Icon(
+                      Icons.delete,
+                      color: Colors.red,
                     ),
+                    onPressed: () async {
+                      await deleteAudio(
+                        setState,
+                      );
+                    },
                   ),
                 ],
+              ),
+            ),
+        ],
+      ),
+    ),
+  ),
+
+  // =========================================
+  // الأزرار
+  // =========================================
+
+  actions: [
+
+    TextButton(
+      onPressed: isSending
+          ? null
+          : () {
+              Navigator.pop(
+                dialogContext,
               );
             },
-          ),
-        ),
-      ],
+      child: const Text(
+        'إلغاء',
+      ),
     ),
-  ),            const SizedBox(height: 12),
-				
 
-                // ▶️ تشغيل / حذف
-                if (audioAnswerFile != null)
-                  Row(
-                    mainAxisAlignment:
-                        MainAxisAlignment.center,
-                    children: [
-                      IconButton(
-                        icon: Icon(isPlaying
-                            ? Icons.stop
-                            : Icons.play_arrow),
-                        onPressed: playAudio,
+    ElevatedButton(
+      onPressed: isSending
+          ? null
+          : () async {
+              setState(() {
+                isSending = true;
+              });
+
+              try {
+                final answerText =
+                    answerController.text
+                        .trim();
+
+                final finalAnswer =
+                    answerText.isEmpty
+                        ? " "
+                        : answerText;
+
+                final hasAudio =
+                    audioAnswerFile != null;
+
+                final hasNewImages =
+                    newImages.isNotEmpty;
+
+                // =====================================
+                // التحقق
+                // =====================================
+
+                if (finalAnswer.trim().isEmpty &&
+                    !hasAudio &&
+                    !hasNewImages) {
+
+                  setState(() {
+                    isSending = false;
+                  });
+
+                  ScaffoldMessenger
+                      .of(context)
+                      .showSnackBar(
+                    const SnackBar(
+                      content: Text(
+                        'يرجى كتابة الرد أو إضافة صورة أو تسجيل صوت',
                       ),
-                      IconButton(
-                        icon: const Icon(Icons.delete,
-                            color: Colors.red),
-                        onPressed: deleteAudio,
-                      ),
-                    ],
-                  ),
-              ],
-            ),
+                    ),
+                  );
 
-            actions: [
-              TextButton(
-                child: const Text('إلغاء'),
-                onPressed: () => Navigator.pop(context),
-              ),
+                  return;
+                }
 
-            ElevatedButton(
-  onPressed: isSending
-      ? null
-      : () async {
-          setState(() {
-            isSending = true;
-          });
+                debugPrint(
+                  "=================================",
+                );
 
-          final answerText =
-              answerController.text.trim().isEmpty
-                  ? " "
-                  : answerController.text.trim();
+                debugPrint(
+                  "START EDIT ANSWER",
+                );
 
-          final hasAudio = audioAnswerFile != null;
-          final hasImage =
-            existingImages.isNotEmpty ||
-            newImages.isNotEmpty;
+                debugPrint(
+                  "QUESTION ID: ${q['id']}",
+                );
 
-          if (answerText.trim().isEmpty &&
-              !hasAudio &&
-              !hasImage) {
-            setState(() {
-              isSending = false;
-            });
+                debugPrint(
+                  "EXPERT ID: ${widget.expertId}",
+                );
 
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text(
-                  'يرجى كتابة الرد أو تسجيل الصوت',
-                ),
-              ),
-            );
-            return;
-          }
+                debugPrint(
+                  "NEW IMAGES: ${newImages.length}",
+                );
 
-          
-try {
-  final audioPath = audioAnswerFile?.path;
+                // =====================================
+                // حفظ التعديل محلياً
+                // =====================================
 
-  // حفظ التعديل محلياً أولاً
-  // sync_type = 2 لأن العملية عبارة عن تعديل رد موجود
-  await LocalDB.updateEditedAnswer(
+                await LocalDB.updateEditedAnswer(
+                  q['id'],
+                  finalAnswer,
+                  audioAnswerFile?.path,
+                  widget.expertId,
+                  isSynced: 0,
+                );
+
+                // =====================================
+                // حفظ الصور الجديدة
+                // =====================================
+
+                for (final image
+                    in newImages) {
+
+                  if (await image.exists()) {
+
+                    final size =
+                        await image.length();
+
+                    if (size > 0) {
+
+                      await LocalDB
+                          .insertNewAnswerImage(
+                        q['id'],
+                        image.path,
+                      );
+
+                      debugPrint(
+                        "LOCAL IMAGE SAVED: "
+                        "${image.path}",
+                      );
+                    }
+                  }
+                }
+                 
+				 debugPrint("================================");
+                  debugPrint("EDIT SAVE");
+                  debugPrint("QUESTION ID: ${q['id']}");
+                  debugPrint("NEW IMAGES COUNT: ${newImages.length}");
+
+                 for (final image in newImages) {
+                  debugPrint("NEW IMAGE PATH: ${image.path}");
+                  debugPrint("NEW IMAGE EXISTS: ${image.existsSync()}");
+
+               if (image.existsSync()) {
+                debugPrint(
+               "NEW IMAGE SIZE: ${image.lengthSync()} bytes",
+               );
+                 }
+               }
+
+               debugPrint("================================");
+                // =====================================
+                // إرسال التعديل للسيرفر
+                // =====================================
+
+                final success =
+                    await ApiService.editAnswer(
+                  q['id'],
+                  finalAnswer,
+                  widget.expertId,
+                  audioFile:
+                      audioAnswerFile,
+                  imageFiles:
+                      newImages,
+                );
+
+                debugPrint(
+                  "EDIT API SUCCESS: $success",
+                );
+
+                // =====================================
+                // نجح
+                // =====================================
+if (success) {
+  await LocalDB.markImagesAsSynced(
     q['id'],
-    answerText,
-    audioPath,
-    widget.expertId,
-    isSynced: 0,
   );
 
-  // حفظ الصور الجديدة فقط
-  // الصور القديمة الموجودة على السيرفر لا نحذفها
-  for (final image in newImages) {
-    await LocalDB.insertNewAnswerImage(
-      q['id'],
-      image.path,
+  await LocalDB.markAnswerAsSynced(
+    q['id'],
+  );
+
+  if (mounted) {
+    ScaffoldMessenger.of(this.context).showSnackBar(
+      const SnackBar(
+        content: Text(
+          'تم تعديل الرد بنجاح',
+        ),
+      ),
     );
   }
 
-  // محاولة إرسال التعديل مباشرة إلى السيرفر
-  final success = await ApiService.editAnswer(
-    q['id'],
-    answerText,
-    widget.expertId,
-    audioFile: audioAnswerFile,
-    imageFiles: newImages,
-  );
-
-  if (success) {
-    // الصور الجديدة أصبحت موجودة على السيرفر
-    await LocalDB.markImagesAsSynced(q['id']);
-
-    // الرد أصبح متزامناً
-    await LocalDB.markAnswerAsSynced(q['id']);
-
-    if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('تم تعديل الرد بنجاح'),
-        ),
-      );
-    }
-
-    if (context.mounted) {
-      Navigator.pop(context);
-    }
-
-    _loadQuestions();
-  } else {
-    // لا نغير حالة المزامنة.
-    // سيبقى:
-    // is_synced = 0
-    // sync_type = 2
-    // والصور الجديدة is_new = 1
-    // حتى تقوم المزامنة بإرسالها لاحقاً.
-
-    if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'تم حفظ التعديل وسيتم إرساله لاحقاً',
-          ),
-        ),
-      );
-    }
-
-    if (context.mounted) {
-      Navigator.pop(context);
-    }
-
-    _loadQuestions();
+  if (dialogContext.mounted) {
+    Navigator.of(dialogContext).pop(true);
   }
+
+  return;
 }
- catch (e) {
-            debugPrint(
-              "Answer sending error: $e",
-            );
 
-            if (context.mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text(
-                    'حدث خطأ أثناء إرسال الرد',
-                  ),
-                ),
-              );
-            }
+                // =====================================
+                // فشل - سيبقى للمزامنة
+                // =====================================
 
-            // نسمح بالمحاولة مرة أخرى فقط
-            setState(() {
-              isSending = false;
-            });
-          }
-        },
-  child: isSending
-      ? const SizedBox(
-          width: 22,
-          height: 22,
-          child: CircularProgressIndicator(
-            strokeWidth: 2,
-            color: Colors.white,
-          ),
-        )
-      : const Text('إرسال'),
-),
-            ],
-          );
-        });
-      },
+               else {
+  debugPrint(
+    "EDIT FAILED - WAITING FOR SYNC",
+  );
+
+  if (mounted) {
+    ScaffoldMessenger.of(this.context).showSnackBar(
+      const SnackBar(
+        content: Text(
+          'تم حفظ التعديل وسيتم إرساله لاحقاً',
+        ),
+      ),
     );
   }
+
+  if (dialogContext.mounted) {
+    Navigator.of(dialogContext).pop(false);
+  }
+
+  return;
+}
+
+              } catch (e, stackTrace) {
+
+                debugPrint(
+                  "EDIT ANSWER ERROR: $e",
+                );
+
+                debugPrint(
+                  stackTrace.toString(),
+                );
+
+                if (context.mounted) {
+                  ScaffoldMessenger
+                      .of(context)
+                      .showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        'حدث خطأ أثناء تعديل الرد: $e',
+                      ),
+                    ),
+                  );
+                }
+
+                setState(() {
+                  isSending = false;
+                });
+              }
+            },
+
+      child: isSending
+          ? const SizedBox(
+              width: 22,
+              height: 22,
+              child:
+                  CircularProgressIndicator(
+                strokeWidth: 2,
+                color: Colors.white,
+              ),
+            )
+          : const Text(
+              'حفظ التعديل',
+            ),
+    ),
+  ],
+);
+        },
+      );
+    },
+  );
+//final editResult = await showDialog<bool>(...);
+
+if (editResult != null && mounted) {
+  await _loadQuestions();
+}
+  // =========================================================
+  // تنظيف الموارد
+  // =========================================================
+
+  answerController.dispose();
+
+  try {
+    await player.stop();
+  } catch (_) {}
+
+  debugPrint(
+    "EDIT DIALOG CLOSED",
+  );
+}
+
+
 	 Future<void> _showFullImage(String? imagePath) async {
 	  await showDialog(
 		context: context,

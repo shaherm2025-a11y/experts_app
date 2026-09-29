@@ -3,6 +3,7 @@ import 'package:http/http.dart' as http;
 import '../models/expert.dart';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
+import 'package:http_parser/http_parser.dart';
 
 class ApiService {
 //   static const String baseUrl = "https://mohashaher-backend-supaspace.hf.space";
@@ -171,9 +172,7 @@ static Future<bool> editAnswer(
   File? audioFile,
   List<File>? imageFiles,
 }) async {
-
   try {
-
     final request = http.MultipartRequest(
       'PUT',
       Uri.parse(
@@ -181,15 +180,18 @@ static Future<bool> editAnswer(
       ),
     );
 
-    request.fields['answer'] =
-        answerText;
+    request.fields['answer'] = answerText;
+    request.fields['expert_id'] = expertId.toString();
 
-    request.fields['expert_id'] =
-        expertId.toString();
+    // =========================
+    // AUDIO
+    // =========================
 
-    // صوت جديد فقط إذا سجله المستخدم
     if (audioFile != null &&
         await audioFile.exists()) {
+      debugPrint(
+        "EDIT AUDIO: ${audioFile.path}",
+      );
 
       request.files.add(
         await http.MultipartFile.fromPath(
@@ -199,34 +201,87 @@ static Future<bool> editAnswer(
       );
     }
 
-    // الصور الجديدة فقط
-    if (imageFiles != null) {
-
-      for (final image in imageFiles) {
-
-        if (!await image.exists()) {
-          continue;
-        }
-
-        request.files.add(
-          await http.MultipartFile.fromPath(
-            'answer_images',
-            image.path,
-          ),
-        );
-      }
-    }
-
-    final response =
-        await request.send();
-
-    final body =
-        await response.stream
-            .bytesToString();
+    // =========================
+    // IMAGES
+    // =========================
 
     debugPrint(
-      "EDIT STATUS: "
-      "${response.statusCode}",
+      "EDIT IMAGE FILES COUNT: "
+      "${imageFiles?.length ?? 0}",
+    );
+
+    if (imageFiles != null) {
+  for (final image in imageFiles) {
+    final exists = await image.exists();
+
+    debugPrint("IMAGE PATH: ${image.path}");
+    debugPrint("IMAGE EXISTS: $exists");
+
+    if (!exists) {
+      continue;
+    }
+
+    final extension =
+        image.path.toLowerCase().split('.').last;
+
+    MediaType? contentType;
+
+    if (extension == 'jpg' || extension == 'jpeg') {
+      contentType = MediaType('image', 'jpeg');
+    } else if (extension == 'png') {
+      contentType = MediaType('image', 'png');
+    } else if (extension == 'webp') {
+      contentType = MediaType('image', 'webp');
+    }
+
+    request.files.add(
+      await http.MultipartFile.fromPath(
+        'answer_images',
+        image.path,
+        contentType: contentType,
+      ),
+    );
+
+    debugPrint(
+      "IMAGE ADDED: ${image.path} "
+      "TYPE: $contentType",
+    );
+  }
+}
+
+    // =========================
+    // REQUEST DEBUG
+    // =========================
+
+    debugPrint(
+      "EDIT REQUEST FIELDS: ${request.fields}",
+    );
+
+    debugPrint(
+      "EDIT REQUEST FILES: ${request.files.length}",
+    );
+
+    for (final file in request.files) {
+      debugPrint(
+        "REQUEST FILE => "
+        "field=${file.field}, "
+        "filename=${file.filename}, "
+        "length=${file.length}, "
+        "contentType=${file.contentType}",
+      );
+    }
+
+    // =========================
+    // SEND
+    // =========================
+
+    final response = await request.send();
+
+    final body =
+        await response.stream.bytesToString();
+
+    debugPrint(
+      "EDIT STATUS: ${response.statusCode}",
     );
 
     debugPrint(
@@ -234,9 +289,7 @@ static Future<bool> editAnswer(
     );
 
     return response.statusCode == 200;
-
   } catch (e) {
-
     debugPrint(
       "editAnswer error: $e",
     );
