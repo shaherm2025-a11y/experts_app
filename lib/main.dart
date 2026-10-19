@@ -134,15 +134,27 @@ class _ExpertsAppState extends State<ExpertsApp> {
       debugShowCheckedModeBanner: false,
       theme: ThemeData(primarySwatch: Colors.green),
       home: const LoginScreen(),
-      routes: {
-        '/admin': (context) => const AdminDashboard(),
-        '/expert': (context) {
-          final expertId =
-              ModalRoute.of(context)!.settings.arguments as int;
+      
+routes: {
+  '/admin': (context) {
+    final adminExpertId =
+        ModalRoute.of(context)!.settings.arguments as int;
 
-          return ExpertHomeScreen(expertId: expertId);
-        },
-      },
+    return AdminDashboard(
+      adminExpertId: adminExpertId,
+    );
+  },
+
+  '/expert': (context) {
+    final expertId =
+        ModalRoute.of(context)!.settings.arguments as int;
+
+    return ExpertHomeScreen(
+      expertId: expertId,
+    );
+  },
+},
+
     );
   }
 }

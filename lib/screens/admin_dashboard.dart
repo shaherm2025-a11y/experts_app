@@ -5,18 +5,47 @@ import 'add_expert_screen.dart';
 import 'expert_home_screen.dart'; // ✅ لفتح واجهة الخبراء
 import '../widgets/expert_card.dart';
 import 'edit_profile_screen.dart';
+import 'answered_report_screen.dart';
+import 'answered_details_report_screen.dart';
 
 
 class AdminDashboard extends StatefulWidget {
-  const AdminDashboard({super.key});
+  final int adminExpertId;
+
+  const AdminDashboard({
+    super.key,
+    required this.adminExpertId,
+  });
 
   @override
-  State<AdminDashboard> createState() => _AdminDashboardState();
+  State<AdminDashboard> createState() =>
+      _AdminDashboardState();
 }
 
 class _AdminDashboardState extends State<AdminDashboard> {
   List<Expert> experts = [];
+  
+ void _openAnsweredReport() {
+  Navigator.push(
+    context,
+    MaterialPageRoute(
+      builder: (_) => AnsweredReportScreen(
+        adminExpertId: widget.adminExpertId,
+      ),
+    ),
+  );
+}
 
+void _openAnsweredDetailsReport() {
+  Navigator.push(
+    context,
+    MaterialPageRoute(
+      builder: (_) => AnsweredDetailsReportScreen(
+        adminExpertId: widget.adminExpertId,
+      ),
+    ),
+  );
+}
   void _loadExperts() async {
     final data = await ApiService.getExperts();
     setState(() => experts = data);
@@ -41,63 +70,64 @@ class _AdminDashboardState extends State<AdminDashboard> {
         child: Column(
           children: [
             // 🔹 أزرار الإدارة في الأعلى
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              children: [
-                // زر إدارة المستخدمين
-                ElevatedButton.icon(
-                  icon: const Icon(Icons.manage_accounts, size: 28),
-                  label: const Text(
-                    'إدارة المستخدمين',
-                    style: TextStyle(fontSize: 16),
-                  ),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.blue[700],
-					foregroundColor: Colors.black, 
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                  onPressed: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => const ManageExpertsPage(),
-                      ),
-                    );
-                  },
-                ),
+          
+Row(
+  children: [
+    Expanded(
+      child: ElevatedButton.icon(
+        icon: const Icon(Icons.manage_accounts),
+        label: const Text('إدارة المستخدمين'),
+        onPressed: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => const ManageExpertsPage(),
+            ),
+          );
+        },
+      ),
+    ),
+    const SizedBox(width: 8),
+    Expanded(
+      child: ElevatedButton.icon(
+        icon: const Icon(Icons.chat),
+        label: const Text('واجهة الخبراء'),
+        onPressed: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => const ExpertHomeScreen(
+                expertId: 1,
+              ),
+            ),
+          );
+        },
+      ),
+    ),
+    const SizedBox(width: 8),
+    Expanded(
+      child: ElevatedButton.icon(
+        icon: const Icon(Icons.bar_chart),
+        label: const Text('تقرير الإجابات'),
+        onPressed: _openAnsweredReport,
+      ),
+    ),
+  ],
+ ),
+            const SizedBox(height: 8),
 
-                // زر واجهة الخبراء
-                ElevatedButton.icon(
-                  icon: const Icon(Icons.chat, size: 28),
-                  label: const Text(
-                    'واجهة الخبراء',
-                    style: TextStyle(fontSize: 16),
-                  ),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.green[700],
-					foregroundColor: Colors.black,
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                  onPressed: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => const ExpertHomeScreen(
-                          expertId: 1, // ✅ المدير يمكنه رؤية جميع الردود
-                        ),
-                      ),
-                    );
-                  },
-                ),
-              ],
+            SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+            icon: const Icon(Icons.description),
+            label: const Text('التقرير التفصيلي'),
+            style: ElevatedButton.styleFrom(
+            backgroundColor: Colors.teal.shade700,
+            foregroundColor: Colors.white,
+            padding: const EdgeInsets.symmetric(vertical: 13),
+            ),
+            onPressed: _openAnsweredDetailsReport,
+            ),
             ),
             const SizedBox(height: 20),
             const Divider(),

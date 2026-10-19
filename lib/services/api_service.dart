@@ -313,4 +313,91 @@ static Future<void> saveFcmToken({
   );
 }
 
+  // تقرير عدد الإجابات لكل خبير
+  static Future<Map<String, dynamic>> getAnsweredReport({
+    required int adminExpertId,
+    int? expertId,
+    DateTime? startDate,
+    DateTime? endDate,
+  }) async {
+    final queryParams = <String, String>{
+      'admin_expert_id': adminExpertId.toString(),
+      if (expertId != null) 'expert_id': expertId.toString(),
+      if (startDate != null)
+        'start_date':
+            '${startDate.year.toString().padLeft(4, '0')}-'
+            '${startDate.month.toString().padLeft(2, '0')}-'
+            '${startDate.day.toString().padLeft(2, '0')}',
+      if (endDate != null)
+        'end_date':
+            '${endDate.year.toString().padLeft(4, '0')}-'
+            '${endDate.month.toString().padLeft(2, '0')}-'
+            '${endDate.day.toString().padLeft(2, '0')}',
+    };
+
+    final uri = Uri.parse(
+      '$baseUrl/admin/report/answered-count',
+    ).replace(queryParameters: queryParams);
+
+    final response = await http
+        .get(uri)
+        .timeout(const Duration(seconds: 20));
+
+    final data = jsonDecode(response.body);
+
+    if (response.statusCode == 200) {
+      return Map<String, dynamic>.from(data);
+    }
+
+    if (data is Map && data['detail'] != null) {
+      throw Exception(data['detail'].toString());
+    }
+
+    throw Exception('فشل تحميل تقرير الإجابات');
+  }
+ 
+static Future<Map<String, dynamic>> getAnsweredDetailsReport({
+  required int adminExpertId,
+  required int expertId,
+  DateTime? startDate,
+  DateTime? endDate,
+}) async {
+  final queryParams = <String, String>{
+    'admin_expert_id': adminExpertId.toString(),
+    'expert_id': expertId.toString(),
+  };
+
+  if (startDate != null) {
+    queryParams['start_date'] =
+        '${startDate.year.toString().padLeft(4, '0')}-'
+        '${startDate.month.toString().padLeft(2, '0')}-'
+        '${startDate.day.toString().padLeft(2, '0')}';
+  }
+
+  if (endDate != null) {
+    queryParams['end_date'] =
+        '${endDate.year.toString().padLeft(4, '0')}-'
+        '${endDate.month.toString().padLeft(2, '0')}-'
+        '${endDate.day.toString().padLeft(2, '0')}';
+  }
+
+  final uri = Uri.parse(
+    '$baseUrl/admin/report/answered-details',
+  ).replace(queryParameters: queryParams);
+
+  final response = await http.get(uri);
+
+  final data = jsonDecode(response.body);
+
+  if (response.statusCode == 200) {
+    return Map<String, dynamic>.from(data);
+  }
+
+  throw Exception(
+    data is Map
+        ? data['detail'] ?? 'فشل تحميل التقرير التفصيلي'
+        : 'فشل تحميل التقرير التفصيلي',
+  );
+}
+
 }

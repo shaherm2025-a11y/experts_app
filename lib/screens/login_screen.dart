@@ -151,7 +151,7 @@ class _LoginScreenState extends State<LoginScreen> {
     // التحقق من الحقول
     if (name.isEmpty ||
         password.isEmpty) {
-
+   
       setState(() {
 
         _error =
@@ -181,6 +181,8 @@ class _LoginScreenState extends State<LoginScreen> {
         password,
       );
 
+
+
       if (!mounted) return;
 
       // =====================================================
@@ -189,9 +191,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
       if (res['status'] == 'success') {
 
-        final expertId =
-            res['expert_id'];
-
+        final expertId = int.parse(res['expert_id'].toString());
         // ===================================================
         // SharedPreferences:
         // نحفظ فقط رقم الخبير
@@ -249,24 +249,29 @@ class _LoginScreenState extends State<LoginScreen> {
         // ===================================================
         // الانتقال حسب نوع المستخدم
         // ===================================================
+   final bool isAdmin = res['is_admin'] == true;
 
-        if (res['is_admin'] == true) {
 
-          Navigator.pushReplacementNamed(
-            context,
-            '/admin',
-          );
+await prefs.setBool('is_admin', isAdmin);
 
-        } else {
 
-          Navigator.pushReplacementNamed(
-            context,
-            '/expert',
-            arguments: expertId,
-          );
 
-        }
 
+if (!mounted) return;
+
+if (isAdmin) {
+  Navigator.pushReplacementNamed(
+    context,
+    '/admin',
+    arguments: expertId,
+  );
+} else {
+  Navigator.pushReplacementNamed(
+    context,
+    '/expert',
+    arguments: expertId,
+  );
+}
       } else {
 
         // ===================================================
