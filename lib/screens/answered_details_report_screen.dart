@@ -7,6 +7,247 @@ import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 import '../models/expert.dart';
 import '../services/api_service.dart';
+import 'package:flutter/foundation.dart';
+
+
+
+String _formatPdfDateValue(dynamic value) {
+  if (value == null || value.toString().trim().isEmpty) {
+    return 'غير متوفر';
+  }
+
+  try {
+    final raw = value.toString().trim();
+    final date = DateTime.parse(raw.replaceFirst(' ', 'T'));
+
+    final year = date.year.toString().padLeft(4, '0');
+    final month = date.month.toString().padLeft(2, '0');
+    final day = date.day.toString().padLeft(2, '0');
+    final hour = date.hour.toString().padLeft(2, '0');
+    final minute = date.minute.toString().padLeft(2, '0');
+
+    // استخدام الشرطة العادية بدل الفواصل السابقة.
+    return '$year-$month-$day $hour:$minute';
+  } catch (_) {
+    return value.toString();
+  }
+}
+
+String _formatPdfDuration(dynamic value) {
+  if (value == null || value is! num) {
+    return 'غير متوفر';
+  }
+
+  final seconds = value.round();
+  if (seconds < 0) return 'وقت غير صحيح';
+
+  final duration = Duration(seconds: seconds);
+  final days = duration.inDays;
+  final hours = duration.inHours.remainder(24);
+  final minutes = duration.inMinutes.remainder(60);
+  final remainingSeconds = duration.inSeconds.remainder(60);
+
+  if (days > 0) {
+    return '$days يوم، $hours ساعة، $minutes دقيقة';
+  }
+  if (hours > 0) {
+    return '$hours ساعة، $minutes دقيقة';
+  }
+  if (minutes > 0) {
+    return '$minutes دقيقة';
+  }
+  return '$remainingSeconds ثانية';
+}
+
+
+Future<Uint8List> _buildReportPdfInBackground(
+  Map<String, dynamic> input,
+) async {
+  final fontBytes = input['fontBytes'] as Uint8List;
+  final font = pw.Font.ttf(ByteData.sublistView(fontBytes));
+  final pdf = pw.Document();
+
+  final details = List<Map<String, dynamic>>.from(
+    (input['details'] as List).map(
+      (item) => Map<String, dynamic>.from(item as Map),
+    ),
+  );
+
+  // عرض التاريخ والأرقام من اليسار إلى اليمين.
+  pw.Widget dateCell(String value) {
+    return pw.Directionality(
+      textDirection: pw.TextDirection.ltr,
+      child: pw.Text(
+        value,
+        textAlign: pw.TextAlign.center,
+        style: pw.TextStyle(
+          font: pw.Font.helvetica(),
+          fontSize: 7,
+        ),
+      ),
+    );
+  }
+
+  // عرض النصوص العربية من اليمين إلى اليسار.
+  pw.Widget arabicCell(String value) {
+    return pw.Directionality(
+      textDirection: pw.TextDirection.rtl,
+      child: pw.Text(
+        value,
+        textAlign: pw.TextAlign.right,
+        style: pw.TextStyle(
+          font: font,
+          fontSize: 8,
+        ),
+      ),
+    );
+  }
+
+  pdf.addPage(
+    pw.MultiPage(
+      pageFormat: PdfPageFormat.a4.landscape,
+      margin: const pw.EdgeInsets.all(20),
+      theme: pw.ThemeData.withFont(
+        base: font,
+        bold: font,
+      ),
+      maxPages: 500,
+      build: (context) => [
+        // معلومات التقرير.
+        pw.Directionality(
+          textDirection: pw.TextDirection.rtl,
+          child: pw.Column(
+            crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+            children: [
+              pw.Center(
+                child: pw.Text(
+                  'التقرير التفصيلي لإجابات الخبراء',
+                  style: pw.TextStyle(
+                    font: font,
+                    fontSize: 17,
+                    fontWeight: pw.FontWeight.bold,
+                  ),
+                ),
+              ),
+              pw.SizedBox(height: 10),
+              pw.Text(
+                'اسم الخبير: ${input['expertName']}',
+                style: pw.TextStyle(font: font),
+              ),
+              pw.SizedBox(height: 4),
+
+              // فصل التاريخ عن النص العربي.
+              pw.Row(
+                mainAxisAlignment: pw.MainAxisAlignment.end,
+                children: [
+                  pw.Text(
+                    'الفترة: ',
+                    style: pw.TextStyle(font: font),
+                  ),
+                  pw.Directionality(
+                    textDirection: pw.TextDirection.ltr,
+                    child: pw.Text(
+                      '${input['startDate']} - ${input['endDate']}',
+                      style: pw.TextStyle(
+                        font: pw.Font.helvetica(),
+                        fontSize: 10,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+
+              pw.SizedBox(height: 4),
+              pw.Text(
+                'عدد الإجابات: ${details.length}',
+                style: pw.TextStyle(font: font),
+              ),
+              pw.SizedBox(height: 12),
+            ],
+          ),
+        ),
+
+        // جدول الإجابات.
+        pw.TableHelper.fromTextArray(
+          headers: const [
+            'نص الاستفسار',
+            'تاريخ ووقت الاستفسار',
+            'نص الرد',
+            'تاريخ ووقت الرد',
+            'الفارق الزمني',
+          ],
+          data: details.map((item) {
+            return [
+              item['question']?.toString() ?? '',
+              _formatPdfDateValue(item['question_date']),
+              item['answer']?.toString() ?? '',
+              _formatPdfDateValue(item['diagnosis_date']),
+              _formatPdfDuration(item['response_seconds']),
+            ];
+          }).toList(),
+
+          cellBuilder: (columnIndex, cellValue, rowIndex) {
+            final value = cellValue.toString();
+
+            // صف العناوين.
+            if (rowIndex == 0) {
+              return pw.Directionality(
+                textDirection: pw.TextDirection.rtl,
+                child: pw.Text(
+                  value,
+                  textAlign: pw.TextAlign.center,
+                  style: pw.TextStyle(
+                    font: font,
+                    fontSize: 8,
+                    fontWeight: pw.FontWeight.bold,
+                  ),
+                ),
+              );
+            }
+
+            // عمودا التاريخ والوقت.
+            if (columnIndex == 1 || columnIndex == 3) {
+              return dateCell(value);
+            }
+
+            // النصوص العربية وبقية الأعمدة.
+            return arabicCell(value);
+          },
+
+          headerStyle: pw.TextStyle(
+            font: font,
+            fontSize: 8,
+            fontWeight: pw.FontWeight.bold,
+          ),
+          cellStyle: pw.TextStyle(
+            font: font,
+            fontSize: 7,
+          ),
+          headerDecoration: const pw.BoxDecoration(
+            color: PdfColors.teal100,
+          ),
+          border: pw.TableBorder.all(
+            color: PdfColors.grey600,
+          ),
+          cellAlignment: pw.Alignment.centerRight,
+          headerAlignment: pw.Alignment.center,
+          cellPadding: const pw.EdgeInsets.all(4),
+          columnWidths: {
+            0: const pw.FlexColumnWidth(2.2),
+            1: const pw.FlexColumnWidth(1.3),
+            2: const pw.FlexColumnWidth(2.5),
+            3: const pw.FlexColumnWidth(1.3),
+            4: const pw.FlexColumnWidth(1.5),
+          },
+        ),
+      ],
+    ),
+  );
+
+  return pdf.save();
+}
+
+
 
 class AnsweredDetailsReportScreen extends StatefulWidget {
   final int adminExpertId;
@@ -196,78 +437,85 @@ class _AnsweredDetailsReportScreenState
     return pw.Font.ttf(fontData);
   }
 
-  Future<Uint8List> _createReportPdf() async {
-    final font = await _loadArabicPdfFont();
-    final pdf = pw.Document();
-    final rows = details.map((rawItem) {
-      final item = Map<String, dynamic>.from(rawItem as Map);
-      return [
-        item['question']?.toString() ?? '',
-        _displayDateTime(item['question_date']),
-        item['answer']?.toString() ?? '',
-        _displayDateTime(item['diagnosis_date']),
-        formatResponseDuration(item['response_seconds']),
-      ];
-    }).toList();
+Future<Uint8List> _createReportPdf() async {
+  final fontData = await rootBundle.load(
+    'assets/fonts/NotoNaskhArabic-Regular.ttf',
+  );
 
-    pdf.addPage(
-      pw.MultiPage(
-        pageFormat: PdfPageFormat.a4.landscape,
-        margin: const pw.EdgeInsets.all(24),
-        theme: pw.ThemeData.withFont(base: font, bold: font),
-        build: (context) => [
-          pw.Directionality(
-            textDirection: pw.TextDirection.rtl,
-            child: pw.Column(
-              crossAxisAlignment: pw.CrossAxisAlignment.stretch,
-              children: [
-                pw.Center(child: pw.Text('التقرير التفصيلي لإجابات الخبراء',
-                    style: pw.TextStyle(font: font, fontSize: 18, fontWeight: pw.FontWeight.bold))),
-                pw.SizedBox(height: 10),
-                pw.Text('اسم الخبير: $_selectedExpertName'),
-                pw.SizedBox(height: 4),
-                pw.Text('الفترة: ${_formatDate(startDate)} إلى ${_formatDate(endDate)}'),
-                pw.Text('عدد الإجابات: ${details.length}'),
-                pw.SizedBox(height: 14),
-                pw.TableHelper.fromTextArray(
-                  headers: ['نص الاستفسار', 'تاريخ ووقت الاستفسار', 'نص الرد', 'تاريخ ووقت الرد', 'الفارق الزمني'],
-                  data: rows,
-                  headerStyle: pw.TextStyle(font: font, fontWeight: pw.FontWeight.bold, fontSize: 9),
-                  cellStyle: pw.TextStyle(font: font, fontSize: 8),
-                  headerDecoration: const pw.BoxDecoration(color: PdfColors.teal100),
-                  border: pw.TableBorder.all(color: PdfColors.grey600),
-                  cellAlignment: pw.Alignment.centerRight,
-                  headerAlignment: pw.Alignment.centerRight,
-                  cellPadding: const pw.EdgeInsets.all(5),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
+  final fontBytes = fontData.buffer.asUint8List(
+    fontData.offsetInBytes,
+    fontData.lengthInBytes,
+  );
+
+  final input = <String, dynamic>{
+    'fontBytes': fontBytes,
+    'expertName': _selectedExpertName,
+    'startDate': _formatDate(startDate),
+    'endDate': _formatDate(endDate),
+    'details': details.map((item) {
+      return Map<String, dynamic>.from(item as Map);
+    }).toList(),
+  };
+
+  return compute(_buildReportPdfInBackground, input);
+}
+
+  
+bool generatingPdf = false;
+
+Future<void> _printReport() async {
+  if (generatingPdf || details.isEmpty) return;
+
+  setState(() => generatingPdf = true);
+
+  try {
+    final bytes = await _createReportPdf();
+
+    if (!mounted) return;
+
+    await Printing.layoutPdf(
+      onLayout: (_) async => bytes,
+      name: 'answered_details_report.pdf',
     );
-    return pdf.save();
-  }
+  } catch (e) {
+    if (!mounted) return;
 
-  Future<void> _printReport() async {
-    try {
-      final bytes = await _createReportPdf();
-      await Printing.layoutPdf(onLayout: (_) async => bytes, name: 'answered_details_report.pdf');
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('تعذرت الطباعة: $e')));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('تعذرت الطباعة: $e')),
+    );
+  } finally {
+    if (mounted) {
+      setState(() => generatingPdf = false);
     }
   }
+}
 
-  Future<void> _exportReportPdf() async {
-    try {
-      final bytes = await _createReportPdf();
-      await Printing.sharePdf(bytes: bytes, filename: 'answered_details_report.pdf');
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('تعذر إنشاء أو مشاركة PDF: $e')));
+Future<void> _exportReportPdf() async {
+  if (generatingPdf || details.isEmpty) return;
+
+  setState(() => generatingPdf = true);
+
+  try {
+    final bytes = await _createReportPdf();
+
+    if (!mounted) return;
+
+    await Printing.sharePdf(
+      bytes: bytes,
+      filename: 'answered_details_report.pdf',
+    );
+  } catch (e) {
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('تعذر إنشاء أو مشاركة PDF: $e')),
+    );
+  } finally {
+    if (mounted) {
+      setState(() => generatingPdf = false);
     }
   }
+}
 
   @override
   Widget build(BuildContext context) {
@@ -365,26 +613,48 @@ class _AnsweredDetailsReportScreenState
                   ),
 
                   const SizedBox(height: 8),
-                  if (!loadingReport && details.isNotEmpty)
-                    Row(
-                      children: [
-                        Expanded(
-                          child: OutlinedButton.icon(
-                            onPressed: _printReport,
-                            icon: const Icon(Icons.print),
-                            label: const Text('طباعة التقرير'),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: ElevatedButton.icon(
-                            onPressed: _exportReportPdf,
-                            icon: const Icon(Icons.picture_as_pdf),
-                            label: const Text('تصدير PDF'),
-                          ),
-                        ),
-                      ],
-                    ),
+                  
+if (!loadingReport && details.isNotEmpty)
+  Column(
+    children: [
+      if (generatingPdf)
+        const Padding(
+          padding: EdgeInsets.all(8),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+              SizedBox(width: 10),
+              Text('جارٍ تجهيز ملف PDF...'),
+            ],
+          ),
+        ),
+      Row(
+        children: [
+          Expanded(
+            child: OutlinedButton.icon(
+              onPressed: generatingPdf ? null : _printReport,
+              icon: const Icon(Icons.print),
+              label: const Text('طباعة التقرير'),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: ElevatedButton.icon(
+              onPressed: generatingPdf ? null : _exportReportPdf,
+              icon: const Icon(Icons.picture_as_pdf),
+              label: const Text('تصدير PDF'),
+            ),
+          ),
+        ],
+      ),
+    ],
+  ),
+
                   const SizedBox(height: 12),
 
                   if (error != null)
