@@ -65,6 +65,16 @@ Future<Uint8List> _buildReportPdfInBackground(
 ) async {
   final fontBytes = input['fontBytes'] as Uint8List;
   final font = pw.Font.ttf(ByteData.sublistView(fontBytes));
+
+  // خط احتياطي للرموز والمحارف التي قد لا يغطيها خط العربية الأساسي.
+  final symbolFontBytes = input['symbolFontBytes'] as Uint8List?;
+  final symbolFont = symbolFontBytes == null
+      ? null
+      : pw.Font.ttf(ByteData.sublistView(symbolFontBytes));
+  final answerFontFallback = symbolFont == null
+      ? <pw.Font>[]
+      : <pw.Font>[symbolFont];
+
   final pdf = pw.Document();
 
   final details = List<Map<String, dynamic>>.from(
@@ -97,6 +107,7 @@ Future<Uint8List> _buildReportPdfInBackground(
         textAlign: pw.TextAlign.right,
         style: pw.TextStyle(
           font: font,
+          fontFallback: answerFontFallback,
           fontSize: 8,
         ),
       ),
@@ -167,15 +178,33 @@ Future<Uint8List> _buildReportPdfInBackground(
           ),
         ),
 
-        // جدول الإجابات.
+        // جدول الإجابات. نمرر العناوين كعناصر pw.Text مباشرةً
+        // حتى نتحكم باتجاه العربية بدل الاعتماد على تنسيق العنوان الافتراضي.
         pw.TableHelper.fromTextArray(
-          headers: const [
+          headers: [
             'نص الاستفسار',
             'تاريخ ووقت الاستفسار',
             'نص الرد',
             'تاريخ ووقت الرد',
             'الفارق الزمني',
-          ],
+          ].map((title) {
+            return pw.Directionality(
+              textDirection: pw.TextDirection.rtl,
+              child: pw.Center(
+                child: pw.Text(
+                  title,
+                  textDirection: pw.TextDirection.rtl,
+                  textAlign: pw.TextAlign.center,
+                  style: pw.TextStyle(
+                    font: font,
+                    fontSize: 8,
+                    fontWeight: pw.FontWeight.bold,
+                  ),
+                ),
+              ),
+            );
+          }).toList(),
+
           data: details.map((item) {
             return [
               item['question']?.toString() ?? '',
@@ -189,28 +218,12 @@ Future<Uint8List> _buildReportPdfInBackground(
           cellBuilder: (columnIndex, cellValue, rowIndex) {
             final value = cellValue.toString();
 
-            // صف العناوين.
-            if (rowIndex == 0) {
-              return pw.Directionality(
-                textDirection: pw.TextDirection.rtl,
-                child: pw.Text(
-                  value,
-                  textAlign: pw.TextAlign.center,
-                  style: pw.TextStyle(
-                    font: font,
-                    fontSize: 8,
-                    fontWeight: pw.FontWeight.bold,
-                  ),
-                ),
-              );
-            }
-
-            // عمودا التاريخ والوقت.
+            // التواريخ والأوقات: من اليسار إلى اليمين.
             if (columnIndex == 1 || columnIndex == 3) {
               return dateCell(value);
             }
 
-            // النصوص العربية وبقية الأعمدة.
+            // بقية الخلايا العربية.
             return arabicCell(value);
           },
 
@@ -219,17 +232,12 @@ Future<Uint8List> _buildReportPdfInBackground(
             fontSize: 8,
             fontWeight: pw.FontWeight.bold,
           ),
-          cellStyle: pw.TextStyle(
-            font: font,
-            fontSize: 7,
-          ),
+          cellStyle: pw.TextStyle(font: font, fontSize: 7),
           headerDecoration: const pw.BoxDecoration(
             color: PdfColors.teal100,
           ),
-          border: pw.TableBorder.all(
-            color: PdfColors.grey600,
-          ),
-          cellAlignment: pw.Alignment.centerRight,
+          border: pw.TableBorder.all(color: PdfColors.grey600),
+          cellAlignment: pw.Alignment.center,
           headerAlignment: pw.Alignment.center,
           cellPadding: const pw.EdgeInsets.all(4),
           columnWidths: {
@@ -240,6 +248,7 @@ Future<Uint8List> _buildReportPdfInBackground(
             4: const pw.FlexColumnWidth(1.5),
           },
         ),
+
       ],
     ),
   );
@@ -447,8 +456,23 @@ Future<Uint8List> _createReportPdf() async {
     fontData.lengthInBytes,
   );
 
+  // هذا الخط اختياري أثناء التشغيل، لكن يلزم إضافة ملفه للمشروع لتفعيل الخط الاحتياطي.
+  Uint8List? symbolFontBytes;
+  try {
+    final symbolData = await rootBundle.load(
+      'assets/fonts/NotoSansSymbols2-Regular.ttf',
+    );
+    symbolFontBytes = symbolData.buffer.asUint8List(
+      symbolData.offsetInBytes,
+      symbolData.lengthInBytes,
+    );
+  } catch (_) {
+    // إذا لم تتم إضافة الخط، يستمر التقرير باستخدام الخط العربي الحالي.
+  }
+
   final input = <String, dynamic>{
     'fontBytes': fontBytes,
+    'symbolFontBytes': symbolFontBytes,
     'expertName': _selectedExpertName,
     'startDate': _formatDate(startDate),
     'endDate': _formatDate(endDate),
