@@ -140,6 +140,13 @@ class _AnsweredReportScreenState
 
   Future<Uint8List> _createReportPdf() async {
     final font = await _loadArabicPdfFont();
+
+    // الخط الاحتياطي للمحارف والرموز التي قد لا يدعمها الخط العربي الأساسي.
+    final symbolsData = await rootBundle.load(
+      'assets/fonts/NotoSansSymbols2-Regular.ttf',
+    );
+    final symbolsFont = pw.Font.ttf(symbolsData);
+
     final pdf = pw.Document();
     final rows = report.map((raw) {
       final item = Map<String, dynamic>.from(raw as Map);
@@ -165,18 +172,60 @@ class _AnsweredReportScreenState
               crossAxisAlignment: pw.CrossAxisAlignment.stretch,
               children: [
                 pw.Center(child: pw.Text('تقرير إجابات الخبراء',
-                    style: pw.TextStyle(font: font, fontSize: 20, fontWeight: pw.FontWeight.bold))),
+                    style: pw.TextStyle(
+                      font: font,
+                      fontFallback: [symbolsFont],
+                      fontSize: 20,
+                      fontWeight: pw.FontWeight.bold,
+                    ))),
                 pw.SizedBox(height: 12),
                 pw.Text('الخبير: $selectedName'),
                 pw.SizedBox(height: 4),
-                pw.Text('الفترة: ${_formatDate(startDate)} إلى ${_formatDate(endDate)}'),
-                pw.Text('عدد الخبراء في التقرير: ${report.length}'),
+                // عرض التواريخ بخط لاتيني واتجاه LTR لتجنب المربعات في الأرقام والفواصل.
+                pw.Row(
+                  mainAxisAlignment: pw.MainAxisAlignment.end,
+                  children: [
+                    pw.Text(
+                      'الفترة: ',
+                      style: pw.TextStyle(
+                        font: font,
+                        fontFallback: [symbolsFont],
+                      ),
+                    ),
+                    pw.Directionality(
+                      textDirection: pw.TextDirection.ltr,
+                      child: pw.Text(
+                        '${_formatDate(startDate)} - ${_formatDate(endDate)}',
+                        style: pw.TextStyle(
+                          font: pw.Font.helvetica(),
+                          fontSize: 10,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                pw.Text(
+                  'عدد الخبراء في التقرير: ${report.length}',
+                  style: pw.TextStyle(
+                    font: font,
+                    fontFallback: [symbolsFont],
+                  ),
+                ),
                 pw.SizedBox(height: 16),
                 pw.TableHelper.fromTextArray(
                   headers: ['اسم الخبير', 'عدد الإجابات'],
                   data: rows,
-                  headerStyle: pw.TextStyle(font: font, fontWeight: pw.FontWeight.bold, fontSize: 11),
-                  cellStyle: pw.TextStyle(font: font, fontSize: 10),
+                  headerStyle: pw.TextStyle(
+                    font: font,
+                    fontFallback: [symbolsFont],
+                    fontWeight: pw.FontWeight.bold,
+                    fontSize: 11,
+                  ),
+                  cellStyle: pw.TextStyle(
+                    font: font,
+                    fontFallback: [symbolsFont],
+                    fontSize: 10,
+                  ),
                   headerDecoration: const pw.BoxDecoration(color: PdfColors.green100),
                   border: pw.TableBorder.all(color: PdfColors.grey600),
                   cellAlignment: pw.Alignment.centerRight,
