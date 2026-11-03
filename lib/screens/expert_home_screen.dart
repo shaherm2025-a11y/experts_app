@@ -80,6 +80,7 @@ class _ExpertHomeScreenState extends State<ExpertHomeScreen>
     player.dispose();
     record.dispose();
     _tabController.dispose();
+	_answeredScrollController.dispose();
 
     super.dispose();
   }
@@ -1010,40 +1011,101 @@ Widget _buildAnswerImagesLazy(int questionId, int imageCount) {
   );
 }
 
-void _jumpToQuestion(int parentQuestionId) {
+Future<void> _jumpToQuestion(int parentQuestionId) async {
+  final targetIndex = answered.indexWhere(
+    (q) => int.tryParse('${q['id']}') == parentQuestionId,
+  );
 
+  if (targetIndex == -1) {
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('لم يتم العثور على الاستفسار المقتبس ضمن الاستفسارات التي تم الرد عليها'),
+      ),
+    );
+    return;
+  }
+
+  // إنشاء مفتاح للاستفسار المستهدف مسبقاً.
+  _questionKeys.putIfAbsent(
+    parentQuestionId,
+    () => GlobalKey(),
+  );
+
+  // الانتقال إلى تبويب الاستفسارات المجابة.
   _tabController.animateTo(1);
 
-  Future.delayed(
-    const Duration(milliseconds: 400),
-    () {
-
-      final key =
-          _questionKeys[parentQuestionId];
-
-      if (key == null) return;
-
-      final context =
-          key.currentContext;
-
-      if (context == null) return;
-
-      Scrollable.ensureVisible(
-        context,
-        duration:
-            const Duration(milliseconds: 600),
-        curve: Curves.easeInOut,
-      );
-
-    },
+  await Future.delayed(
+    const Duration(milliseconds: 350),
   );
-}
-Future<void> _openQuotedQuestion(
-    int parentQuestionId) async {
 
-  _jumpToQuestion(parentQuestionId);
+  if (!mounted) return;
+
+  // التحرك تدريجياً حتى يتم بناء الكرت المستهدف.
+  for (int attempt = 0; attempt < 100; attempt++) {
+    if (!mounted ||
+        !_answeredScrollController.hasClients) {
+      return;
+    }
+
+    final targetContext =
+        _questionKeys[parentQuestionId]?.currentContext;
+
+    if (targetContext != null) {
+      await Scrollable.ensureVisible(
+        targetContext,
+        duration: const Duration(milliseconds: 550),
+        curve: Curves.easeInOut,
+        alignment: 0.12,
+      );
+      return;
+    }
+
+    final position = _answeredScrollController.position;
+
+    final nextOffset = (
+      position.pixels +
+      position.viewportDimension * 0.8
+    ).clamp(
+      0.0,
+      position.maxScrollExtent,
+    ).toDouble();
+
+    if (nextOffset <= position.pixels) {
+      await WidgetsBinding.instance.endOfFrame;
+
+      final finalContext =
+          _questionKeys[parentQuestionId]?.currentContext;
+
+      if (finalContext != null) {
+        await Scrollable.ensureVisible(
+          finalContext,
+          duration: const Duration(milliseconds: 550),
+          curve: Curves.easeInOut,
+          alignment: 0.12,
+        );
+      }
+
+      return;
+    }
+
+    await _answeredScrollController.animateTo(
+      nextOffset,
+      duration: const Duration(milliseconds: 220),
+      curve: Curves.easeOut,
+    );
+
+    await WidgetsBinding.instance.endOfFrame;
+  }
 }
-	
+
+Future<void> _openQuotedQuestion(
+  int parentQuestionId,
+) async {
+  await _jumpToQuestion(parentQuestionId);
+}
+
 Future<void> _showAnswerDialog(Map<String, dynamic> q) async {
     TextEditingController answerController =
         TextEditingController(text: q['answer'] ?? '');
